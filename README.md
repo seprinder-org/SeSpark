@@ -84,7 +84,7 @@ SeSpark/
 
 ### Yêu cầu hệ thống (Prerequisites)
 - [Node.js](https://nodejs.org/) (phiên bản 18 trở lên)
-- [Rust](https://www.rust-lang.org/) và [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) (chỉ cần nếu bạn muốn sửa đổi mã nguồn bộ cắt lớp trong thư mục `slicer-engine`).
+- [Rust](https://www.rust-lang.org/) và [wasm-pack](https://wasm-bindgen.github.io/wasm-pack/installer/) (chỉ cần nếu bạn muốn sửa đổi mã nguồn bộ cắt lớp trong thư mục `slicer-engine`).
 
 ### 1. Build Slicer Engine (Tùy chọn)
 Nếu bạn thay đổi thuật toán cắt lớp trong thư mục Rust `slicer-engine`, hãy biên dịch lại để tạo mã WASM mới cho frontend:
@@ -98,6 +98,7 @@ wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-engine
 Di chuyển vào thư mục frontend, cài đặt thư viện và khởi chạy môi trường phát triển:
 
 ```bash
+cd ..
 cd frontend
 npm install
 npm run dev
