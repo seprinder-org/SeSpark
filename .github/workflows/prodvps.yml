@@ -1,3 +1,8 @@
+# ==========================================
+# DUMMY DEPLOY TRIGGER: Thay đổi số/chữ dưới đây (ví dụ: v1 -> v2) để tạo commit và trigger deploy khi cần.
+# TRIGGER_VERSION: v1
+# ==========================================
+
 name: Build and Push Docker Image to GHCR
 
 on:
@@ -8,7 +13,11 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Chỉ chạy khi commit message chứa từ khóa "Build and push image"
+    # ==========================================
+    # DÒNG BẬT/TẮT ĐIỀU KIỆN DEPLOY:
+    # - Mở comment (#) dòng dưới để BẮT BUỘC commit message phải có chữ 'Build and push image' mới deploy.
+    # - Đóng comment (#) dòng dưới để tự động deploy trên MỌI lượt push lên nhánh master.
+    # ==========================================
     if: contains(github.event.head_commit.message, 'Build and push image')
     
     permissions:
