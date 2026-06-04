@@ -1,5 +1,5 @@
 name: Build and Push Docker Image to GHCR
-
+# Trigger version: 2
 on:
   push:
     branches:
@@ -47,3 +47,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Delete old untagged images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'sespark'
+          package-type: 'container'
+          min-versions-to-keep: 1
+          delete-only-untagged-versions: 'true'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
