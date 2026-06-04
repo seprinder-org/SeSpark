@@ -1,6 +1,6 @@
 # ==========================================
 # DUMMY DEPLOY TRIGGER: Thay đổi số/chữ dưới đây (ví dụ: v1 -> v2) để tạo commit và trigger deploy khi cần.
-# TRIGGER_VERSION: v1
+# TRIGGER_VERSION: v2
 # ==========================================
 
 name: Build and Push Docker Image to GHCR
