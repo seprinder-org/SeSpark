@@ -4,4 +4,4 @@ services:
     container_name: sespark-app
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5173:80"

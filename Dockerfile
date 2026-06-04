@@ -37,9 +37,9 @@ RUN npm run build --prefix frontend
 # --- Stage 3: Production Stage ---
 FROM nginx:alpine
 
-# Tạo tệp cấu hình Nginx tối giản hỗ trợ SPA routing lắng nghe ở cổng 5173
+# Tạo tệp cấu hình Nginx tối giản hỗ trợ SPA routing lắng nghe ở cổng 80 tiêu chuẩn
 RUN echo 'server { \
-    listen 5173; \
+    listen 80; \
     server_name localhost; \
     location / { \
         root /usr/share/nginx/html; \
@@ -55,6 +55,6 @@ RUN echo 'server { \
 # Sao chép thư mục dist từ build stage sang thư mục static của Nginx
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
-EXPOSE 5173
+EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
