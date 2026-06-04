@@ -1,8 +1,6 @@
 services:
   sespark:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/seprinder-org/sespark:latest
     container_name: sespark-app
     restart: unless-stopped
     ports:
