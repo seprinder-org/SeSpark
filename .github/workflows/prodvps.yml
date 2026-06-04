@@ -1,3 +1,8 @@
+# ==========================================
+# DUMMY DEPLOY TRIGGER: Thay đổi số/chữ dưới đây (ví dụ: v1 -> v2) để tạo commit và trigger deploy khi cần.
+# TRIGGER_VERSION: v5
+# ==========================================
+
 name: Build and Push Docker Image to GHCR
 # Trigger version: 2
 on:
@@ -8,7 +13,11 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Chỉ chạy khi commit message chứa từ khóa "Build and push image"
+    # ==========================================
+    # DÒNG BẬT/TẮT ĐIỀU KIỆN DEPLOY:
+    # - Mở comment (#) dòng dưới để BẮT BUỘC commit message phải có chữ 'Build and push image' mới deploy.
+    # - Đóng comment (#) dòng dưới để tự động deploy trên MỌI lượt push lên nhánh master.
+    # ==========================================
     if: contains(github.event.head_commit.message, 'Build and push image')
     
     permissions:
@@ -27,14 +36,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Lowercase repository name for Docker
+        id: string
         run: |
-          echo "IMAGE_NAME=ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]' >> $GITHUB_ENV
+          echo "image_name=ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]' >> $GITHUB_OUTPUT
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ steps.string.outputs.image_name }}
           tags: |
             type=raw,value=latest
             type=sha
