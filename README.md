@@ -80,31 +80,51 @@ SeSpark/
 
 ---
 
-## 🛠️ Hướng dẫn Cài đặt & Khởi chạy (Setup & Installation)
+## 🚀 Triển khai bằng Docker Compose (Deployment Guide)
+
+Nhánh này được cấu hình sẵn để triển khai ứng dụng SeSpark lên máy chủ (VPS/Server) một cách nhanh chóng thông qua việc pull Docker image đã build sẵn từ GitHub Container Registry (GHCR).
+
+### Yêu cầu hệ thống (Prerequisites)
+- Máy chủ đã được cài đặt **Docker** và **Docker Compose**.
+
+### Các bước triển khai
+Để chạy ứng dụng trên VPS, bạn chỉ cần một tệp `compose.yml` duy nhất và thực hiện các lệnh sau:
+
+```bash
+# Tải hình ảnh mới nhất từ GHCR
+docker compose pull
+
+# Khởi chạy ứng dụng chạy ngầm
+docker compose up -d
+```
+
+Sau khi container khởi động thành công, bạn có thể truy cập ứng dụng trên trình duyệt web thông qua cổng `5173`:
+`http://<IP_VPS_hoặc_Domain>:5173`
+
+---
+
+## 🛠️ Hướng dẫn Phát triển Local (Local Development Guide)
+
+Nếu bạn muốn chỉnh sửa mã nguồn và chạy thử nghiệm trực tiếp trên máy cá nhân:
 
 ### Yêu cầu hệ thống (Prerequisites)
 - [Node.js](https://nodejs.org/) (phiên bản 18 trở lên)
-- [Rust](https://www.rust-lang.org/) và [wasm-pack](https://wasm-bindgen.github.io/wasm-pack/installer/) (chỉ cần nếu bạn muốn sửa đổi mã nguồn bộ cắt lớp trong thư mục `slicer-engine`).
+- [Rust](https://www.rust-lang.org/) và [wasm-pack](https://wasm-bindgen.github.io/wasm-pack/installer/) (chỉ cần nếu bạn sửa đổi mã nguồn Rust trong `slicer-engine`).
 
 ### 1. Build Slicer Engine (Tùy chọn)
-Nếu bạn thay đổi thuật toán cắt lớp trong thư mục Rust `slicer-engine`, hãy biên dịch lại để tạo mã WASM mới cho frontend:
+Nếu thay đổi thuật toán Rust, biên dịch lại WebAssembly:
 ```bash
 cd slicer-engine
 wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-engine
 ```
-*Lưu ý: Thư mục `frontend/src/lib/wasm-engine` đã chứa mã WASM được build sẵn, bạn có thể bỏ qua bước này.*
 
 ### 2. Khởi chạy Frontend
-Di chuyển vào thư mục frontend, cài đặt thư viện và khởi chạy môi trường phát triển:
-
 ```bash
-cd ..
 cd frontend
 npm install
 npm run dev
 ```
-
-Sau khi chạy lệnh trên, truy cập đường dẫn local (thường là `http://localhost:5173`) hiển thị trong terminal để trải nghiệm ứng dụng.
+Truy cập local tại `http://localhost:5173` để trải nghiệm và debug ứng dụng.
 
 ---
 
