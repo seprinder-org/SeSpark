@@ -32,6 +32,14 @@ jobs:
         cd slicer-engine
         cargo test
 
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Build Slicer Engine WASM
+      run: |
+        cd slicer-engine
+        wasm-pack build --target web --out-dir ../frontend/src/lib/wasm-engine
+
     - name: Use Node.js
       uses: actions/setup-node@v4
       with:
