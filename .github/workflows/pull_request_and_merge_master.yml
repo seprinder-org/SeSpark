@@ -1,5 +1,5 @@
 name: PR to Master Test and Auto Merge
-# Trigger version: 3 (Updated for GitHub Ruleset Compatibility)
+# Trigger version: 4 (Updated for GitHub Ruleset Compatibility)
 on:
   pull_request:
     branches:
