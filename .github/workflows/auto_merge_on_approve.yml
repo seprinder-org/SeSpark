@@ -8,6 +8,7 @@ jobs:
   automerge:
     if: github.event.review.state == 'approved' && (github.event.review.author_association == 'OWNER' || github.event.review.author_association == 'COLLABORATOR' || github.event.review.author_association == 'MEMBER')
     runs-on: ubuntu-latest
+    environment: prod
     permissions:
       pull-requests: write
       contents: write
@@ -15,5 +16,5 @@ jobs:
       - name: Enable auto-merge for approved PR
         run: gh pr merge --auto --merge "$PR_URL"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MODERATOR_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
