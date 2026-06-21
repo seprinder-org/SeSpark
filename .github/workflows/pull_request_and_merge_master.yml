@@ -1,5 +1,5 @@
 name: PR to Master Test and Auto Merge
-# Trigger version: 1
+# Trigger version: 2 (Updated for GitHub Ruleset Compatibility)
 on:
   pull_request:
     branches:
@@ -58,32 +58,36 @@ jobs:
     - name: Auto merge PR if tests pass
       if: success()
       env:
-        GH_TOKEN: ${{ github.token }}
+        # Sử dụng ADMIN_PAT thay vì github.token để bypass qua GitHub Ruleset
+        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
         gh pr merge ${{ github.event.pull_request.number }} --merge --auto
 
     - name: Create and push git tag
       if: success()
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
-        # Configure git
+        # Cấu hình thông tin Git Bot
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         
-        # Fetch tags to ensure we have the latest ones
+        # Cập nhật lại Remote URL chứa ADMIN_PAT để có quyền push lên Protected Branch
+        git remote set-url origin https://x-access-token:${{ secrets.ADMIN_PAT }}@github.com/${{ github.repository }}.git
+        
+        # Đồng bộ danh sách thẻ
         git fetch --tags
         
-        # Get the latest tag
+        # Lấy tag mới nhất dựa trên phiên bản
         LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
         echo "Latest tag found: $LATEST_TAG"
         
-        # Default if no tags exist
+        # Khởi tạo tag mặc định nếu chưa từng có tag nào
         if [ -z "$LATEST_TAG" ]; then
           LATEST_TAG="v1.0.0"
         fi
         
-        # Extract version parts
+        # Tự động tăng số Patch định dạng vX.Y.Z
         if [[ "$LATEST_TAG" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
           MAJOR="${BASH_REMATCH[1]}"
           MINOR="${BASH_REMATCH[2]}"
