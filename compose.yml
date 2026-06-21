@@ -1,7 +1,7 @@
 services:
   sespark:
     image: ghcr.io/seprinder-org/sespark:latest
-    container_name: sespark-app
+    container_name: sespark
     restart: unless-stopped
     ports:
       - "5173:80"
