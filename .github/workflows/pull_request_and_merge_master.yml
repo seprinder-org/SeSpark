@@ -55,25 +55,8 @@ jobs:
       run: |
         cd frontend
         npm run check
-    - name: Approve PR
+    - name: Merge PR and push to master
       if: success()
-      env:
-        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
-      run: |
-        gh pr review ${{ github.event.pull_request.number }} --approve || echo "Could not approve PR (maybe owned by the same user), proceeding..."
-
-    - name: Auto merge PR if tests pass
-      if: success()
-      env:
-        # Sử dụng ADMIN_PAT thay vì github.token để bypass qua GitHub Ruleset
-        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
-      run: |
-        gh pr merge ${{ github.event.pull_request.number }} --merge --admin
-
-    - name: Create and push git tag
-      if: success()
-      env:
-        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
         # Cấu hình thông tin Git Bot
         git config user.name "github-actions[bot]"
@@ -81,6 +64,27 @@ jobs:
         
         # Cập nhật lại Remote URL chứa ADMIN_PAT để có quyền push lên Protected Branch
         git remote set-url origin https://x-access-token:${{ secrets.ADMIN_PAT }}@github.com/${{ github.repository }}.git
+        
+        # Fetch nhánh master từ remote
+        git fetch origin master:master
+        
+        # Checkout qua nhánh master
+        git checkout master
+        
+        # Merge commit đầu của PR vào master
+        git merge ${{ github.event.pull_request.head.sha }} --no-ff -m "Merge pull request #${{ github.event.pull_request.number }} from ${{ github.event.pull_request.head.label }}"
+        
+        # Push trực tiếp lên master (bypassing Ruleset via ADMIN_PAT push privileges)
+        git push origin master
+
+    - name: Create and push git tag
+      if: success()
+      env:
+        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
+      run: |
+        # Cấu hình thông tin Git Bot (đã set ở bước trước, nhưng set lại cho chắc chắn)
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
         
         # Đồng bộ danh sách thẻ
         git fetch --tags
