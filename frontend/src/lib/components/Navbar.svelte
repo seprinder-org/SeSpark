@@ -76,7 +76,7 @@
       <div class="logo-icon">
         <Activity size={20} color="#00e575" strokeWidth={2.5} />
       </div>
-      <span class="app-title">SeSpark v1.0.0</span>
+      <span class="app-title">SeSpark v1.0.8</span>
     </div>
 
     <!-- Menus -->
