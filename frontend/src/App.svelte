@@ -114,7 +114,7 @@
 </script>
 
 <svelte:head>
-  <title>SeSpark - Sponsored by SEPRINDER</title>
+  <title>SeSpark - Sponsored by Seprinder</title>
 </svelte:head>
 
 <div
