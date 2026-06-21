@@ -1,5 +1,5 @@
-name: PR to Master Test and Auto Merge
-# Trigger version: 13 (Secure Open-Source Configuration)
+name: PR to Master Test and Check
+# Trigger version: 15 (Secure PR validation only)
 on:
   pull_request:
     branches:
@@ -10,12 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-merge:
+  test-and-check:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       checks: write
-      pull-requests: write
 
     steps:
     - uses: actions/checkout@v4
@@ -50,12 +49,3 @@ jobs:
       run: |
         cd frontend
         npm run check
-
-    - name: Enable Auto-Merge via GitHub Native Feature
-      if: success()
-      env:
-        GH_TOKEN: ${{ github.token }} # Dùng token mặc định, an toàn tuyệt đối cho Open Source
-      run: |
-        echo "Các bài test đã pass xanh. Kích hoạt chế độ xếp hàng chờ Auto-Merge của GitHub..."
-        # Lệnh này báo với GitHub: "Khi nào mọi điều kiện bảo vệ (Ruleset) thỏa mãn, hãy tự merge PR này lại"
-        gh pr merge ${{ github.event.pull_request.number }} --merge --auto
