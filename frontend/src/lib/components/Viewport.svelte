@@ -421,11 +421,11 @@
       <div class="slider-track-wrap">
         <input 
           type="range" 
-          orient="vertical" /* Standard HTML vertical slider support */
           min="0" 
           max={$sliceResult.layer_count - 1} 
           bind:value={$currentLayerIndex}
           class="layer-z-slider"
+          {...{ orient: 'vertical' }}
         />
       </div>
       <span class="slider-label-bottom">Z: {($sliceResult.layers[$currentLayerIndex]?.z || 0).toFixed(2)} mm</span>
