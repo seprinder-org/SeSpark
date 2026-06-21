@@ -1,5 +1,5 @@
 name: PR to Master Test and Auto Merge
-# Trigger version: 11 (Secure Open-Source Configuration)
+# Trigger version: 12 (Secure Open-Source Configuration)
 on:
   pull_request:
     branches:
