@@ -1,0 +1,60 @@
+name: Deploy with SSH Key
+# Trigger version: 1
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Verify and Debug Secrets
+        run: |
+          VAL_HOST="${{ secrets.SSH_HOST }}"
+          VAL_USER="${{ secrets.SSH_USERNAME }}"
+          VAL_KEY="${{ secrets.SSH_PRIVATE_KEY }}"
+          VAL_PASSPHRASE="${{ secrets.SSH_PASSPHRASE }}"
+          VAL_ROOT_PWD="${{ secrets.SSH_ROOT_PASSWORD }}"
+
+          echo "=== SECRETS STATUS ==="
+          echo "SSH_HOST: length ${#VAL_HOST}"
+          echo "SSH_USERNAME: length ${#VAL_USER}"
+          echo "SSH_PRIVATE_KEY: length ${#VAL_KEY}"
+          echo "SSH_PASSPHRASE: length ${#VAL_PASSPHRASE}"
+          echo "SSH_ROOT_PASSWORD: length ${#VAL_ROOT_PWD}"
+
+          echo "=== KEY FORMAT CHECK ==="
+          if [ -z "$VAL_KEY" ]; then
+            echo "❌ SSH_PRIVATE_KEY is completely EMPTY!"
+          else
+            echo "First line of key: $(echo "$VAL_KEY" | head -n 1)"
+            echo "Last line of key: $(echo "$VAL_KEY" | tail -n 1)"
+            echo "Line count of key: $(echo "$VAL_KEY" | wc -l)"
+          fi
+
+          echo "=== VALIDATION ==="
+          MISSING=false
+          if [ -z "$VAL_HOST" ]; then echo "❌ Missing SSH_HOST"; MISSING=true; fi
+          if [ -z "$VAL_USER" ]; then echo "❌ Missing SSH_USERNAME"; MISSING=true; fi
+          if [ -z "$VAL_KEY" ]; then echo "❌ Missing SSH_PRIVATE_KEY"; MISSING=true; fi
+          # Note: Passphrase might be intentionally empty if key has no password
+          if [ -z "$VAL_ROOT_PWD" ]; then echo "❌ Missing SSH_ROOT_PASSWORD"; MISSING=true; fi
+
+          if [ "$MISSING" = true ]; then
+            echo "❌ Validation failed: One or more required secrets are missing. Stopping deployment."
+            exit 1
+          else
+            echo "✅ All required secrets are present. Proceeding with deployment..."
+          fi
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          script: |
+            cd ~/spdproject/SeSpark
+            echo "${{ secrets.SSH_ROOT_PASSWORD }}" | sudo -S docker compose pull
+            echo "${{ secrets.SSH_ROOT_PASSWORD }}" | sudo -S docker compose up -d

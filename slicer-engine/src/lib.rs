@@ -154,7 +154,7 @@ fn parse_ascii_stl(data: &[u8]) -> Result<Vec<Triangle>, String> {
 }
 
 // Main parser
-fn parse_stl(data: &[u8]) -> Result<Vec<Triangle>, String> {
+pub fn parse_stl(data: &[u8]) -> Result<Vec<Triangle>, String> {
     if data.len() > 5 && &data[0..5] == b"solid" {
         // Double check if it looks like ASCII
         if let Ok(text) = std::str::from_utf8(&data[0..std::cmp::min(100, data.len())]) {
@@ -344,18 +344,12 @@ fn generate_scanline_infill(
     infill_segments
 }
 
-#[wasm_bindgen]
-pub fn slice_stl(stl_data: &[u8], settings_json: &str) -> Result<String, JsValue> {
-    // 1. Parse settings
-    let settings: SliceSettings = serde_json::from_str(settings_json)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse settings JSON: {}", e)))?;
-
+pub fn slice_stl_core(stl_data: &[u8], settings: &SliceSettings) -> Result<SliceResult, String> {
     // 2. Parse STL file
-    let triangles = parse_stl(stl_data)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse STL: {}", e)))?;
+    let triangles = parse_stl(stl_data)?;
 
     if triangles.is_empty() {
-        return Err(JsValue::from_str("The STL file contains no triangles."));
+        return Err("The STL file contains no triangles.".to_string());
     }
 
     // 3. Compute bounding box and find Z range
@@ -599,15 +593,75 @@ pub fn slice_stl(stl_data: &[u8], settings_json: &str) -> Result<String, JsValue
     let filament_volume_cm3 = total_extrusion_mm * (filament_area) / 1000.0;
     let filament_weight_g = filament_volume_cm3 * 1.24;
 
-    let result = SliceResult {
+    Ok(SliceResult {
         gcode,
         layers,
         print_time_secs,
         filament_used_g: filament_weight_g,
         filament_used_mm: total_extrusion_mm,
         layer_count: z_levels.len(),
-    };
+    })
+}
+
+#[wasm_bindgen]
+pub fn slice_stl(stl_data: &[u8], settings_json: &str) -> Result<String, JsValue> {
+    // 1. Parse settings
+    let settings: SliceSettings = serde_json::from_str(settings_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse settings JSON: {}", e)))?;
+
+    let result = slice_stl_core(stl_data, &settings)
+        .map_err(|e| JsValue::from_str(&e))?;
 
     serde_json::to_string(&result)
         .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dist_2d() {
+        let p1 = Point3D::new(0.0, 0.0, 0.0);
+        let p2 = Point3D::new(3.0, 4.0, 10.0); // Z is ignored
+        assert_eq!(dist_2d(&p1, &p2), 5.0);
+    }
+
+    #[test]
+    fn test_rotate_point() {
+        let p = Point3D::new(10.0, 0.0, 1.0);
+        let rotated = rotate_point(p, PI / 2.0, 0.0, 0.0);
+        assert!((rotated.x - 0.0).abs() < 1e-5);
+        assert!((rotated.y - 10.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_link_segments_into_loops() {
+        let segments = vec![
+            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 0.0, 0.0)),
+            (Point3D::new(1.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)),
+            (Point3D::new(0.0, 1.0, 0.0), Point3D::new(0.0, 0.0, 0.0)),
+        ];
+        let loops = link_segments_into_loops(segments);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].len(), 3);
+    }
+
+    #[test]
+    fn test_parse_ascii_stl() {
+        let stl_data = b"solid test
+facet normal 0 0 1
+    outer loop
+        vertex 0 0 0
+        vertex 1 0 0
+        vertex 0 1 0
+    endloop
+endfacet
+endsolid test";
+        let triangles = parse_stl(stl_data).unwrap();
+        assert_eq!(triangles.len(), 1);
+        assert_eq!(triangles[0].v1.x, 0.0);
+        assert_eq!(triangles[0].v2.x, 1.0);
+        assert_eq!(triangles[0].v3.y, 1.0);
+    }
 }
