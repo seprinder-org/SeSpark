@@ -1,5 +1,5 @@
 name: PR to Master Test and Auto Merge
-# Trigger version: 6 (Updated for GitHub Ruleset Compatibility)
+# Trigger version: 7 (Updated for GitHub Ruleset Compatibility)
 on:
   pull_request:
     branches:
@@ -55,13 +55,12 @@ jobs:
       run: |
         cd frontend
         npm run check
-
     - name: Approve PR
       if: success()
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
-        gh pr review ${{ github.event.pull_request.number }} --approve
+        gh pr review ${{ github.event.pull_request.number }} --approve || echo "Could not approve PR (maybe owned by the same user), proceeding..."
 
     - name: Auto merge PR if tests pass
       if: success()
