@@ -1,5 +1,5 @@
 name: PR to Master Test and Check
-# Trigger version: 15 (Secure PR validation only)
+# Trigger version: 16 (Secure PR validation only)
 on:
   pull_request:
     branches:
