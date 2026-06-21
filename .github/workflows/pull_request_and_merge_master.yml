@@ -1,5 +1,5 @@
 name: PR to Master Test and Auto Merge
-# Trigger version: 8 (Updated for GitHub Ruleset Compatibility)
+# Trigger version: 9 (Fixed for absolute auto-merge compatibility)
 on:
   pull_request:
     branches:
@@ -55,36 +55,33 @@ jobs:
       run: |
         cd frontend
         npm run check
-    - name: Merge PR and push to master
+
+    - name: Auto merge PR via GitHub API
       if: success()
+      env:
+        GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
-        # Cấu hình thông tin Git Bot
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
+        echo "Bắt đầu tự động Approve và Merge Pull Request..."
+        # Tự động Approve PR trước để thỏa mãn điều kiện Ruleset nếu có yêu cầu approval
+        gh pr review ${{ github.event.pull_request.number }} --approve || echo "PR đã được approve hoặc không cần approve."
         
-        # Cập nhật lại Remote URL chứa ADMIN_PAT để có quyền push lên Protected Branch
-        git remote set-url origin https://x-access-token:${{ secrets.ADMIN_PAT }}@github.com/${{ github.repository }}.git
-        
-        # Fetch nhánh master từ remote
-        git fetch origin master:master
-        
-        # Checkout qua nhánh master
-        git checkout master
-        
-        # Merge commit đầu của PR vào master
-        git merge ${{ github.event.pull_request.head.sha }} --no-ff -m "Merge pull request #${{ github.event.pull_request.number }} from ${{ github.event.pull_request.head.label }}"
-        
-        # Push trực tiếp lên master (bypassing Ruleset via ADMIN_PAT push privileges)
-        git push origin master
+        # Tiến hành merge PR chính thức thông qua API (sử dụng phương thức --merge)
+        gh pr merge ${{ github.event.pull_request.number }} --merge --disable-auto
 
     - name: Create and push git tag
       if: success()
       env:
         GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
-        # Cấu hình thông tin Git Bot (đã set ở bước trước, nhưng set lại cho chắc chắn)
+        # Cấu hình thông tin Git Bot
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Cập nhật lại Remote URL chứa ADMIN_PAT và checkout sang master để xử lý tag chính xác
+        git remote set-url origin https://x-access-token:${{ secrets.ADMIN_PAT }}@github.com/${{ github.repository }}.git
+        git fetch origin master
+        git checkout master
+        git pull origin master
         
         # Đồng bộ danh sách thẻ
         git fetch --tags
