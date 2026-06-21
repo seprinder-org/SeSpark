@@ -1,31 +1,31 @@
 <script lang="ts">
-  import { 
-    activeTab, 
-    selectedPrinter, 
-    selectedFilament, 
-    stlFileBytes, 
-    slicingStatus, 
-    sliceResult, 
+  import {
+    activeTab,
+    selectedPrinter,
+    selectedFilament,
+    stlFileBytes,
+    slicingStatus,
+    sliceResult,
     showGcodeViewer,
     stlFileName,
     slicerSettings,
-    theme
-  } from '../store';
-  import { 
-    Printer, 
-    FolderOpen, 
-    Layers, 
-    Sliders, 
-    Cpu, 
-    Play, 
-    Download, 
-    Code, 
+    theme,
+  } from "../store";
+  import {
+    Printer,
+    FolderOpen,
+    Layers,
+    Sliders,
+    Cpu,
+    Play,
+    Download,
+    Code,
     ChevronDown,
     Activity,
     Sun,
-    Moon
-  } from 'lucide-svelte';
-  
+    Moon,
+  } from "lucide-svelte";
+
   // Triggers STL file loading via hidden input
   let fileInput: HTMLInputElement;
 
@@ -38,13 +38,13 @@
     if (input.files && input.files[0]) {
       const file = input.files[0];
       stlFileName.set(file.name);
-      
+
       const reader = new FileReader();
       reader.onload = (e) => {
         if (e.target?.result) {
           const arrayBuffer = e.target.result as ArrayBuffer;
           stlFileBytes.set(new Uint8Array(arrayBuffer));
-          slicingStatus.set('idle');
+          slicingStatus.set("idle");
           sliceResult.set(null);
         }
       };
@@ -57,9 +57,9 @@
 
   function handleDownloadGcode() {
     if (!$sliceResult) return;
-    const blob = new Blob([$sliceResult.gcode], { type: 'text/plain' });
+    const blob = new Blob([$sliceResult.gcode], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = $stlFileName.replace(/\.[^/.]+$/, "") + ".gcode";
     document.body.appendChild(a);
@@ -76,7 +76,7 @@
       <div class="logo-icon">
         <Activity size={20} color="#00e575" strokeWidth={2.5} />
       </div>
-      <span class="app-title">SeSpark <span class="accent-text">Slicer</span></span>
+      <span class="app-title">SeSpark</span>
     </div>
 
     <!-- Menus -->
@@ -88,12 +88,12 @@
       <div class="menu-item">Edit</div>
       <div class="menu-item">Settings</div>
       <div class="menu-item">Help</div>
-      <input 
-        type="file" 
-        accept=".stl" 
-        bind:this={fileInput} 
-        on:change={handleFileChange} 
-        style="display: none;" 
+      <input
+        type="file"
+        accept=".stl"
+        bind:this={fileInput}
+        on:change={handleFileChange}
+        style="display: none;"
       />
     </nav>
 
@@ -105,9 +105,15 @@
         <div class="selector-dropdown">
           <Printer size={14} class="text-secondary" />
           <select bind:value={$selectedPrinter}>
-            <option value="SeSpark CoreXY 256">SeSpark CoreXY 256 (0.4 nozzle)</option>
-            <option value="Bambu Lab X1 Carbon">Bambu Lab X1C (0.4 nozzle)</option>
-            <option value="Creality Ender-3 v3">Creality Ender-3 v3 (0.4 nozzle)</option>
+            <option value="SeSpark CoreXY 256"
+              >SeSpark CoreXY 256 (0.4 nozzle)</option
+            >
+            <option value="Bambu Lab X1 Carbon"
+              >Bambu Lab X1C (0.4 nozzle)</option
+            >
+            <option value="Creality Ender-3 v3"
+              >Creality Ender-3 v3 (0.4 nozzle)</option
+            >
           </select>
           <ChevronDown size={12} class="dropdown-chevron" />
         </div>
@@ -130,17 +136,19 @@
 
     <!-- Actions -->
     <div class="action-buttons">
-      {#if $slicingStatus === 'slicing'}
+      {#if $slicingStatus === "slicing"}
         <button class="btn btn-slice loading" disabled>
           <div class="spinner"></div>
           Slicing...
         </button>
       {:else}
-        <button 
-          class="btn btn-slice" 
-          disabled={!$stlFileBytes} 
+        <button
+          class="btn btn-slice"
+          disabled={!$stlFileBytes}
           on:click={onSlice}
-          title={!$stlFileBytes ? "Please load an STL model first" : "Slice the 3D model"}
+          title={!$stlFileBytes
+            ? "Please load an STL model first"
+            : "Slice the 3D model"}
         >
           <Play size={15} fill="currentColor" />
           Slice Plate
@@ -148,23 +156,33 @@
       {/if}
 
       {#if $sliceResult}
-        <button class="btn btn-secondary" on:click={() => showGcodeViewer.set(true)} title="View G-Code Output">
+        <button
+          class="btn btn-secondary"
+          on:click={() => showGcodeViewer.set(true)}
+          title="View G-Code Output"
+        >
           <Code size={15} />
           View G-Code
         </button>
-        <button class="btn btn-primary" on:click={handleDownloadGcode} title="Export .gcode to disk">
+        <button
+          class="btn btn-primary"
+          on:click={handleDownloadGcode}
+          title="Export .gcode to disk"
+        >
           <Download size={15} />
           Export G-Code
         </button>
       {/if}
 
       <!-- Theme Toggle Button -->
-      <button 
-        class="btn btn-theme-toggle" 
-        on:click={() => theme.update(t => t === 'dark' ? 'light' : 'dark')}
-        title={$theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+      <button
+        class="btn btn-theme-toggle"
+        on:click={() => theme.update((t) => (t === "dark" ? "light" : "dark"))}
+        title={$theme === "dark"
+          ? "Switch to Light Mode"
+          : "Switch to Dark Mode"}
       >
-        {#if $theme === 'dark'}
+        {#if $theme === "dark"}
           <Sun size={15} />
         {:else}
           <Moon size={15} />
@@ -176,28 +194,28 @@
   <!-- Bottom line: Project tab switchers -->
   <div class="navbar-bottom">
     <div class="tab-list">
-      <button 
-        class="tab-btn" 
-        class:active={$activeTab === 'prepare'} 
-        on:click={() => activeTab.set('prepare')}
+      <button
+        class="tab-btn"
+        class:active={$activeTab === "prepare"}
+        on:click={() => activeTab.set("prepare")}
       >
         <Sliders size={14} />
         <span>Prepare</span>
       </button>
-      <button 
-        class="tab-btn" 
-        class:active={$activeTab === 'preview'} 
+      <button
+        class="tab-btn"
+        class:active={$activeTab === "preview"}
         disabled={!$sliceResult}
-        on:click={() => activeTab.set('preview')}
+        on:click={() => activeTab.set("preview")}
         title={!$sliceResult ? "Slice model first to enable Preview" : ""}
       >
         <Layers size={14} />
         <span>Preview</span>
       </button>
-      <button 
-        class="tab-btn" 
-        class:active={$activeTab === 'device'} 
-        on:click={() => activeTab.set('device')}
+      <button
+        class="tab-btn"
+        class:active={$activeTab === "device"}
+        on:click={() => activeTab.set("device")}
       >
         <Cpu size={14} />
         <span>Device</span>
@@ -207,9 +225,13 @@
     <!-- File loaded display -->
     <div class="file-loaded-status">
       {#if $stlFileName}
-        <span class="active-file-name" title={$stlFileName}>Model: {$stlFileName}</span>
+        <span class="active-file-name" title={$stlFileName}
+          >Model: {$stlFileName}</span
+        >
       {:else}
-        <span class="inactive-file-name">No Model Loaded. Please import or drag an STL file.</span>
+        <span class="inactive-file-name"
+          >No Model Loaded. Please import or drag an STL file.</span
+        >
       {/if}
     </div>
   </div>
@@ -444,7 +466,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Bottom Row styling */
