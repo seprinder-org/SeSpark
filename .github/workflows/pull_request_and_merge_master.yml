@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   test-and-merge:
+    environment: prod
     runs-on: ubuntu-latest
     permissions:
       contents: write
