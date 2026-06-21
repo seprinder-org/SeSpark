@@ -62,7 +62,7 @@ jobs:
         # Sử dụng ADMIN_PAT thay vì github.token để bypass qua GitHub Ruleset
         GH_TOKEN: ${{ secrets.ADMIN_PAT }}
       run: |
-        gh pr merge ${{ github.event.pull_request.number }} --merge --auto
+        gh pr merge ${{ github.event.pull_request.number }} --merge --admin
 
     - name: Create and push git tag
       if: success()
