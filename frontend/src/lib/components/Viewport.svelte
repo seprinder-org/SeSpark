@@ -1,19 +1,26 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { 
-    activeTab, 
-    stlFileBytes, 
+  import {
+    activeTab,
+    stlFileBytes,
     stlFileName,
-    sliceResult, 
-    currentLayerIndex, 
+    sliceResult,
+    currentLayerIndex,
     modelDimensions,
-    theme
+    theme,
+    previewOptions,
   } from '../store';
+  import GizmoToolbar from './GizmoToolbar.svelte';
   import * as THREE from 'three';
   import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
   import { Layers, HelpCircle } from 'lucide-svelte';
 
   let container: HTMLDivElement;
+  
+  // Gizmo toolbar state
+  let activeGizmo = 'move';
+  let showGrid = true;
+  let isPerspective = true;
   
   let scene: THREE.Scene;
   let camera: THREE.PerspectiveCamera;
@@ -385,6 +392,33 @@
 
 <div class="viewport-wrapper">
   
+  <!-- Gizmo Toolbar (matches OrcaSlicer's gizmo toolbar) -->
+  <GizmoToolbar
+    activeGizmo={activeGizmo}
+    showGrid={showGrid}
+    isPerspective={isPerspective}
+    onGizmoChange={(gizmo) => { activeGizmo = gizmo; }}
+    onToggleGrid={() => { showGrid = !showGrid; }}
+    onTogglePerspective={() => { isPerspective = !isPerspective; }}
+    onZoomToFit={() => {
+      if (stlMesh) {
+        const box = new THREE.Box3().setFromObject(stlMesh);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const dist = maxDim * 1.5;
+        camera.position.set(center.x, center.y - dist * 0.7, center.z + dist);
+        controls.target.copy(center);
+        controls.update();
+      }
+    }}
+    onResetView={() => {
+      camera.position.set(128, -150, 200);
+      controls.target.set(128, 128, 0);
+      controls.update();
+    }}
+  />
+
   <!-- 3D Canvas container -->
   <div class="canvas-container" bind:this={container}></div>
 

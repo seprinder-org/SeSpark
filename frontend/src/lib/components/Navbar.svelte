@@ -1,8 +1,16 @@
 <script lang="ts">
+  /**
+   * Navbar - Matches OrcaSlicer's top toolbar/menu bar.
+   * Contains: Logo, Menu bar (File/Edit/Settings/Help),
+   * Printer/Filament/Process preset selectors, Slice/Export buttons,
+   * Tab switcher (Prepare/Preview/Device), Theme toggle, Search.
+   */
   import {
     activeTab,
+    selectedPrinterId,
     selectedPrinter,
     selectedFilament,
+    selectedProcessPreset,
     stlFileBytes,
     slicingStatus,
     sliceResult,
@@ -10,6 +18,11 @@
     stlFileName,
     slicerSettings,
     theme,
+    printersByBrand,
+    showSearchDialog,
+    showCalibrationDialog,
+    addPlaterObject,
+    addNotification,
   } from "../store";
   import {
     Printer,
@@ -24,7 +37,19 @@
     Activity,
     Sun,
     Moon,
+    Search,
+    Check,
+    Droplets,
+    Gauge,
+    Save,
+    FileText,
+    Settings,
+    HelpCircle,
+    Scissors,
   } from "lucide-svelte";
+  import { getPrinterLabel } from "../profiles/profileService";
+  import type { PrinterProfile } from "../lib/profiles/types";
+  import PlateSelector from "./PlateSelector.svelte";
 
   // Triggers STL file loading via hidden input
   let fileInput: HTMLInputElement;
@@ -43,9 +68,20 @@
       reader.onload = (e) => {
         if (e.target?.result) {
           const arrayBuffer = e.target.result as ArrayBuffer;
-          stlFileBytes.set(new Uint8Array(arrayBuffer));
+          const bytes = new Uint8Array(arrayBuffer);
+          stlFileBytes.set(bytes);
           slicingStatus.set("idle");
           sliceResult.set(null);
+
+          // Add to plater object list
+          addPlaterObject({
+            name: file.name.replace(/\.[^/.]+$/, ""),
+            filename: file.name,
+            stlBytes: bytes,
+            position: { x: 128, y: 128, z: 0 },
+          });
+
+          addNotification('info', `Loaded model: ${file.name}`);
         }
       };
       reader.readAsArrayBuffer(file);
@@ -67,7 +103,143 @@
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
+
+  // ─── Menu Dropdowns ───────────────────────────────────────────────────
+  let activeMenu: string | null = null;
+
+  function toggleMenu(menu: string) {
+    activeMenu = activeMenu === menu ? null : menu;
+  }
+
+  function closeMenus() {
+    activeMenu = null;
+  }
+
+  function handleMenuClick(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.menu-bar')) {
+      closeMenus();
+    }
+  }
+
+  // ─── Printer Dropdown ─────────────────────────────────────────────────
+  let showPrinterDropdown = false;
+  let printerSearch = '';
+
+  $: brandEntries = Object.entries($printersByBrand).sort((a, b) =>
+    a[0].localeCompare(b[0])
+  );
+
+  $: filteredBrandEntries = (() => {
+    if (!printerSearch.trim()) return brandEntries;
+    const q = printerSearch.toLowerCase();
+    return brandEntries
+      .map(([brand, printers]) => {
+        const filtered = printers.filter(
+          (p) =>
+            p.machine_name.toLowerCase().includes(q) ||
+            brand.toLowerCase().includes(q)
+        );
+        return [brand, filtered] as [string, PrinterProfile[]];
+      })
+      .filter(([, printers]) => printers.length > 0);
+  })();
+
+  function selectPrinter(printer: PrinterProfile) {
+    selectedPrinterId.set(printer.id);
+    showPrinterDropdown = false;
+    printerSearch = "";
+  }
+
+  function togglePrinterDropdown() {
+    showPrinterDropdown = !showPrinterDropdown;
+    showFilamentDropdown = false;
+    showProcessDropdown = false;
+  }
+
+  // ─── Filament Dropdown ────────────────────────────────────────────────
+  let showFilamentDropdown = false;
+  let filamentSearch = '';
+
+  $: filamentOptions = $selectedPrinter?.default_materials.length
+    ? $selectedPrinter.default_materials
+    : [
+        "Generic PLA @System",
+        "Generic PETG @System",
+        "Generic ABS @System",
+        "Generic TPU @System",
+        "Generic ASA @System",
+        "Generic PC @System",
+      ];
+
+  $: filteredFilaments = filamentOptions.filter(f =>
+    f.toLowerCase().includes(filamentSearch.toLowerCase())
+  );
+
+  function selectFilament(name: string) {
+    selectedFilament.set(name);
+    showFilamentDropdown = false;
+    filamentSearch = '';
+  }
+
+  function toggleFilamentDropdown() {
+    showFilamentDropdown = !showFilamentDropdown;
+    showPrinterDropdown = false;
+    showProcessDropdown = false;
+  }
+
+  // ─── Process Dropdown ─────────────────────────────────────────────────
+  let showProcessDropdown = false;
+  let processSearch = '';
+
+  const processOptions = [
+    '0.20mm Standard @System',
+    '0.16mm Optimal @System',
+    '0.12mm Fine @System',
+    '0.08mm Extra Fine @System',
+    '0.24mm Draft @System',
+  ];
+
+  $: filteredProcesses = processOptions.filter(p =>
+    p.toLowerCase().includes(processSearch.toLowerCase())
+  );
+
+  function selectProcess(name: string) {
+    selectedProcessPreset.set(name);
+    showProcessDropdown = false;
+    processSearch = '';
+  }
+
+  function toggleProcessDropdown() {
+    showProcessDropdown = !showProcessDropdown;
+    showPrinterDropdown = false;
+    showFilamentDropdown = false;
+  }
+
+  // ─── Close dropdowns on outside click ─────────────────────────────────
+  function handleDocumentClick(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.dropdown-wrapper')) {
+      showPrinterDropdown = false;
+      showFilamentDropdown = false;
+      showProcessDropdown = false;
+    }
+  }
+
+  // ─── Theme Toggle ─────────────────────────────────────────────────────
+  function toggleTheme() {
+    theme.update(t => t === 'dark' ? 'light' : 'dark');
+  }
+
+  // ─── Tab Switcher ─────────────────────────────────────────────────────
+  const tabs: { id: string; label: string; icon: any }[] = [
+    { id: 'prepare', label: 'Prepare', icon: Layers },
+    { id: 'preview', label: 'Preview', icon: Play },
+    { id: 'device', label: 'Device', icon: Cpu },
+  ];
 </script>
+
+<svelte:window on:click={handleMenuClick} on:click={handleDocumentClick} />
 
 <header class="navbar">
   <!-- Top line: Logo, Menus, Quick Settings -->
@@ -79,15 +251,107 @@
       <span class="app-title">SeSpark v1.0.10</span>
     </div>
 
-    <!-- Menus -->
+    <!-- Menu Bar (matching OrcaSlicer's menu system) -->
     <nav class="menu-bar">
-      <div class="menu-item" on:click={triggerFileSelect}>
-        <FolderOpen size={14} />
-        <span>File</span>
+      <!-- File Menu -->
+      <div class="menu-item-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="menu-item" on:click={() => toggleMenu('file')} on:mouseenter={() => {}}>
+          <FolderOpen size={13} />
+          <span>File</span>
+          <ChevronDown size={10} />
+        </div>
+        {#if activeMenu === 'file'}
+          <div class="menu-dropdown">
+            <button class="menu-dropdown-item" on:click={triggerFileSelect}>
+              <FolderOpen size={13} /> Open STL...
+            </button>
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <Save size={13} /> Save Project
+            </button>
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <FolderOpen size={13} /> Load Project
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-dropdown-item" on:click={handleDownloadGcode} disabled={!$sliceResult}>
+              <Download size={13} /> Export G-Code
+            </button>
+            <button class="menu-dropdown-item" on:click={() => showGcodeViewer.set(true)} disabled={!$sliceResult}>
+              <FileText size={13} /> View G-Code
+            </button>
+          </div>
+        {/if}
       </div>
-      <div class="menu-item">Edit</div>
-      <div class="menu-item">Settings</div>
-      <div class="menu-item">Help</div>
+
+      <!-- Edit Menu -->
+      <div class="menu-item-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="menu-item" on:click={() => toggleMenu('edit')}>
+          <Settings size={13} />
+          <span>Edit</span>
+          <ChevronDown size={10} />
+        </div>
+        {#if activeMenu === 'edit'}
+          <div class="menu-dropdown">
+            <button class="menu-dropdown-item" on:click={() => showSearchDialog.set(true)}>
+              <Search size={13} /> Search Settings <span class="shortcut-hint">Ctrl+K</span>
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <Scissors size={13} /> Undo
+            </button>
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <Scissors size={13} /> Redo
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Settings Menu -->
+      <div class="menu-item-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="menu-item" on:click={() => toggleMenu('settings')}>
+          <Settings size={13} />
+          <span>Settings</span>
+          <ChevronDown size={10} />
+        </div>
+        {#if activeMenu === 'settings'}
+          <div class="menu-dropdown">
+            <button class="menu-dropdown-item" on:click={() => showCalibrationDialog.set(true)}>
+              <Gauge size={13} /> Calibration
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-dropdown-item" on:click={toggleTheme}>
+              {#if $theme === 'dark'}
+                <Sun size={13} /> Light Mode
+              {:else}
+                <Moon size={13} /> Dark Mode
+              {/if}
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Help Menu -->
+      <div class="menu-item-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="menu-item" on:click={() => toggleMenu('help')}>
+          <HelpCircle size={13} />
+          <span>Help</span>
+          <ChevronDown size={10} />
+        </div>
+        {#if activeMenu === 'help'}
+          <div class="menu-dropdown">
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <HelpCircle size={13} /> About SeSpark
+            </button>
+            <button class="menu-dropdown-item" on:click={() => {}}>
+              <FileText size={13} /> Documentation
+            </button>
+          </div>
+        {/if}
+      </div>
+
       <input
         type="file"
         accept=".stl"
@@ -97,442 +361,594 @@
       />
     </nav>
 
-    <!-- Profiles selectors -->
+    <!-- Profile Selectors (Printer / Filament / Process) -->
     <div class="profile-selectors">
       <!-- Printer Selector -->
-      <div class="selector-box">
-        <span class="selector-label">Printer</span>
-        <div class="selector-dropdown">
-          <Printer size={14} class="text-secondary" />
-          <select bind:value={$selectedPrinter}>
-            <option value="SeSpark CoreXY 256"
-              >SeSpark CoreXY 256 (0.4 nozzle)</option
-            >
-            <option value="Bambu Lab X1 Carbon"
-              >Bambu Lab X1C (0.4 nozzle)</option
-            >
-            <option value="Creality Ender-3 v3"
-              >Creality Ender-3 v3 (0.4 nozzle)</option
-            >
-          </select>
-          <ChevronDown size={12} class="dropdown-chevron" />
+      <div class="dropdown-wrapper printer-selector-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="selector-dropdown" on:click={togglePrinterDropdown}>
+          <Printer size={13} class="text-secondary" />
+          <span class="selector-value">
+            {$selectedPrinter
+              ? getPrinterLabel($selectedPrinter)
+              : "Select Printer"}
+          </span>
+          <ChevronDown size={10} class="dropdown-chevron" />
         </div>
+
+        {#if showPrinterDropdown}
+          <div class="dropdown-panel printer-panel">
+            <div class="dropdown-search-box">
+              <Search size={13} class="search-icon" />
+              <input
+                type="text"
+                placeholder="Search printers..."
+                bind:value={printerSearch}
+                class="dropdown-search-input"
+              />
+            </div>
+            <div class="dropdown-list">
+              {#each filteredBrandEntries as [brand, printers]}
+                <div class="brand-group">
+                  <div class="brand-header">{brand}</div>
+                  {#each printers as printer}
+                    <button
+                      class="dropdown-item"
+                      class:selected={$selectedPrinterId === printer.id}
+                      on:click={() => selectPrinter(printer)}
+                    >
+                      <span class="dropdown-item-name">{printer.machine_name}</span>
+                      {#if $selectedPrinterId === printer.id}
+                        <Check size={12} class="check-icon" />
+                      {/if}
+                    </button>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
 
       <!-- Filament Selector -->
-      <div class="selector-box">
-        <span class="selector-label">Filament</span>
-        <div class="selector-dropdown">
-          <Layers size={14} class="text-secondary" />
-          <select bind:value={$selectedFilament}>
-            <option value="Generic PLA @SeSpark">Generic PLA @SeSpark</option>
-            <option value="Generic PETG @SeSpark">Generic PETG @SeSpark</option>
-            <option value="Generic ABS @SeSpark">Generic ABS @SeSpark</option>
-          </select>
-          <ChevronDown size={12} class="dropdown-chevron" />
+      <div class="dropdown-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="selector-dropdown" on:click={toggleFilamentDropdown}>
+          <Droplets size={13} class="text-secondary" />
+          <span class="selector-value">{$selectedFilament}</span>
+          <ChevronDown size={10} class="dropdown-chevron" />
         </div>
+
+        {#if showFilamentDropdown}
+          <div class="dropdown-panel">
+            <div class="dropdown-search-box">
+              <Search size={13} class="search-icon" />
+              <input
+                type="text"
+                placeholder="Search filaments..."
+                bind:value={filamentSearch}
+                class="dropdown-search-input"
+              />
+            </div>
+            <div class="dropdown-list">
+              {#each filteredFilaments as filament}
+                <button
+                  class="dropdown-item"
+                  class:selected={$selectedFilament === filament}
+                  on:click={() => selectFilament(filament)}
+                >
+                  <span class="dropdown-item-name">{filament}</span>
+                  {#if $selectedFilament === filament}
+                    <Check size={12} class="check-icon" />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Process Preset Selector -->
+      <div class="dropdown-wrapper">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="selector-dropdown" on:click={toggleProcessDropdown}>
+          <Sliders size={13} class="text-secondary" />
+          <span class="selector-value">{$selectedProcessPreset}</span>
+          <ChevronDown size={10} class="dropdown-chevron" />
+        </div>
+
+        {#if showProcessDropdown}
+          <div class="dropdown-panel">
+            <div class="dropdown-search-box">
+              <Search size={13} class="search-icon" />
+              <input
+                type="text"
+                placeholder="Search process presets..."
+                bind:value={processSearch}
+                class="dropdown-search-input"
+              />
+            </div>
+            <div class="dropdown-list">
+              {#each filteredProcesses as preset}
+                <button
+                  class="dropdown-item"
+                  class:selected={$selectedProcessPreset === preset}
+                  on:click={() => selectProcess(preset)}
+                >
+                  <span class="dropdown-item-name">{preset}</span>
+                  {#if $selectedProcessPreset === preset}
+                    <Check size={12} class="check-icon" />
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
 
-    <!-- Actions -->
+    <!-- Action Buttons -->
     <div class="action-buttons">
-      {#if $slicingStatus === "slicing"}
-        <button class="btn btn-slice loading" disabled>
-          <div class="spinner"></div>
-          Slicing...
-        </button>
-      {:else}
-        <button
-          class="btn btn-slice"
-          disabled={!$stlFileBytes}
-          on:click={onSlice}
-          title={!$stlFileBytes
-            ? "Please load an STL model first"
-            : "Slice the 3D model"}
-        >
-          <Play size={15} fill="currentColor" />
-          Slice Plate
-        </button>
-      {/if}
-
-      {#if $sliceResult}
-        <button
-          class="btn btn-secondary"
-          on:click={() => showGcodeViewer.set(true)}
-          title="View G-Code Output"
-        >
-          <Code size={15} />
-          View G-Code
-        </button>
-        <button
-          class="btn btn-primary"
-          on:click={handleDownloadGcode}
-          title="Export .gcode to disk"
-        >
-          <Download size={15} />
-          Export G-Code
-        </button>
-      {/if}
-
-      <!-- Theme Toggle Button -->
+      <!-- Slice Button -->
       <button
-        class="btn btn-theme-toggle"
-        on:click={() => theme.update((t) => (t === "dark" ? "light" : "dark"))}
-        title={$theme === "dark"
-          ? "Switch to Light Mode"
-          : "Switch to Dark Mode"}
+        class="btn btn-primary"
+        on:click={onSlice}
+        disabled={!$stlFileBytes || $slicingStatus === 'slicing'}
+        title="Slice the current plate"
       >
-        {#if $theme === "dark"}
-          <Sun size={15} />
+        {#if $slicingStatus === 'slicing'}
+          <span class="spinner"></span>
+          <span>Slicing...</span>
         {:else}
-          <Moon size={15} />
+          <Play size={14} />
+          <span>Slice Plate</span>
+        {/if}
+      </button>
+
+      <!-- Export G-Code -->
+      <button
+        class="btn btn-secondary"
+        on:click={handleDownloadGcode}
+        disabled={!$sliceResult}
+        title="Export G-Code file"
+      >
+        <Download size={14} />
+      </button>
+
+      <!-- View G-Code -->
+      <button
+        class="btn btn-secondary"
+        on:click={() => showGcodeViewer.set(true)}
+        disabled={!$sliceResult}
+        title="View G-Code"
+      >
+        <Code size={14} />
+      </button>
+
+      <!-- Search -->
+      <button
+        class="btn btn-icon-only"
+        on:click={() => showSearchDialog.set(true)}
+        title="Search (Ctrl+K)"
+      >
+        <Search size={14} />
+      </button>
+
+      <!-- Theme Toggle -->
+      <button class="btn btn-icon-only" on:click={toggleTheme} title="Toggle theme">
+        {#if $theme === 'dark'}
+          <Sun size={14} />
+        {:else}
+          <Moon size={14} />
         {/if}
       </button>
     </div>
   </div>
 
-  <!-- Bottom line: Project tab switchers -->
+  <!-- Bottom line: Tab switcher + Plate selector -->
   <div class="navbar-bottom">
-    <div class="tab-list">
-      <button
-        class="tab-btn"
-        class:active={$activeTab === "prepare"}
-        on:click={() => activeTab.set("prepare")}
-      >
-        <Sliders size={14} />
-        <span>Prepare</span>
-      </button>
-      <button
-        class="tab-btn"
-        class:active={$activeTab === "preview"}
-        disabled={!$sliceResult}
-        on:click={() => activeTab.set("preview")}
-        title={!$sliceResult ? "Slice model first to enable Preview" : ""}
-      >
-        <Layers size={14} />
-        <span>Preview</span>
-      </button>
-      <button
-        class="tab-btn"
-        class:active={$activeTab === "device"}
-        on:click={() => activeTab.set("device")}
-      >
-        <Cpu size={14} />
-        <span>Device</span>
-      </button>
-    </div>
+    <!-- Tab Switcher (Prepare / Preview / Device) -->
+    <nav class="tab-switcher">
+      {#each tabs as tab}
+        <button
+          class="tab-btn"
+          class:active={$activeTab === tab.id}
+          on:click={() => activeTab.set(tab.id)}
+        >
+          <svelte:component this={tab.icon} size={13} />
+          <span>{tab.label}</span>
+        </button>
+      {/each}
+    </nav>
 
-    <!-- File loaded display -->
-    <div class="file-loaded-status">
-      {#if $stlFileName}
-        <span class="active-file-name" title={$stlFileName}
-          >Model: {$stlFileName}</span
-        >
-      {:else}
-        <span class="inactive-file-name"
-          >No Model Loaded. Please import or drag an STL file.</span
-        >
-      {/if}
-    </div>
+    <!-- Plate Selector (multi-plate support) -->
+    <PlateSelector />
   </div>
 </header>
 
 <style>
-  /* Header styling */
   .navbar {
     display: flex;
     flex-direction: column;
-    background-color: var(--color-bg-navbar);
+    background-color: var(--color-bg-sidebar);
     border-bottom: 1px solid var(--color-border);
     user-select: none;
     z-index: 100;
   }
 
+  /* ─── Top Row ─────────────────────────────────────────────────────── */
   .navbar-top {
-    height: 50px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    height: 44px;
+    padding: 0 12px;
+    gap: 8px;
   }
 
   .logo-area {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
   }
 
   .logo-icon {
-    width: 28px;
-    height: 28px;
-    background: rgba(0, 229, 117, 0.1);
-    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(0, 229, 117, 0.2);
   }
 
   .app-title {
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 700;
-    letter-spacing: 0.5px;
     color: var(--color-text-primary);
+    letter-spacing: -0.3px;
   }
 
-  .accent-text {
-    color: var(--color-accent);
-  }
-
+  /* ─── Menu Bar ────────────────────────────────────────────────────── */
   .menu-bar {
     display: flex;
-    gap: 16px;
-    margin-left: 24px;
-  }
-
-  .menu-item {
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: all 0.15s ease;
-    display: flex;
     align-items: center;
-    gap: 6px;
-  }
-
-  .menu-item:hover {
-    color: var(--color-text-primary);
-    background-color: rgba(255, 255, 255, 0.05);
-  }
-
-  .profile-selectors {
-    display: flex;
-    gap: 16px;
-    margin-left: auto;
-    margin-right: 20px;
-  }
-
-  .selector-box {
-    display: flex;
-    flex-direction: column;
     gap: 2px;
   }
 
-  .selector-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--color-text-muted);
+  .menu-item-wrapper {
+    position: relative;
   }
 
-  .selector-dropdown {
-    position: relative;
+  .menu-item {
     display: flex;
     align-items: center;
-    background-color: var(--color-bg-input);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    padding: 0 24px 0 8px;
-    height: 28px;
-    min-width: 190px;
-    color: var(--color-text-primary);
-    transition: border-color 0.15s ease;
-  }
-
-  .selector-dropdown:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .selector-dropdown select {
-    background: transparent;
-    border: none;
-    outline: none;
-    color: inherit;
-    font-size: 12px;
-    width: 100%;
-    height: 100%;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 5px;
     cursor: pointer;
-    padding-left: 6px;
-    -appearance: none;
-    -webkit-appearance: none;
-  }
-
-  .dropdown-chevron {
-    position: absolute;
-    right: 8px;
-    pointer-events: none;
+    font-size: 12px;
     color: var(--color-text-secondary);
+    transition: all 0.15s ease;
   }
 
-  .action-buttons {
+  .menu-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-primary);
+  }
+
+  .menu-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 200px;
+    background-color: var(--color-bg-sidebar);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    z-index: 300;
+    padding: 4px;
+  }
+
+  .menu-dropdown-item {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    border-radius: 4px;
+    transition: background-color 0.1s ease;
+  }
+
+  .menu-dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  .menu-dropdown-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .menu-divider {
+    height: 1px;
+    background-color: var(--color-border);
+    margin: 4px 8px;
+  }
+
+  .shortcut-hint {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--color-text-muted);
+  }
+
+  /* ─── Profile Selectors ───────────────────────────────────────────── */
+  .profile-selectors {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dropdown-wrapper {
+    position: relative;
+  }
+
+  .selector-dropdown {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+    max-width: 180px;
+  }
+
+  .selector-dropdown:hover {
+    border-color: var(--color-accent);
+  }
+
+  .selector-value {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+  }
+
+  .dropdown-chevron {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .dropdown-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 260px;
+    background-color: var(--color-bg-sidebar);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    z-index: 300;
+    overflow: hidden;
+  }
+
+  .printer-panel {
+    min-width: 300px;
+  }
+
+  .dropdown-search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .search-icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .dropdown-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--color-text-primary);
+    font-size: 12px;
+  }
+
+  .dropdown-search-input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .dropdown-list {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .brand-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 10px 3px;
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    transition: background-color 0.1s ease;
+  }
+
+  .dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  .dropdown-item.selected {
+    background-color: rgba(0, 229, 117, 0.08);
+    color: var(--color-accent);
+  }
+
+  .dropdown-item-name {
+    flex: 1;
+  }
+
+  .check-icon {
+    color: var(--color-accent);
+    flex-shrink: 0;
+  }
+
+  /* ─── Action Buttons ──────────────────────────────────────────────── */
+  .action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
   }
 
   .btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    height: 32px;
-    padding: 0 12px;
+    gap: 5px;
+    padding: 5px 10px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    border: none;
+    border: 1px solid transparent;
     transition: all 0.15s ease;
-  }
-
-  .btn-slice {
-    background-color: var(--color-accent);
-    color: #0b0f19;
-  }
-
-  .btn-slice:hover:not(:disabled) {
-    background-color: #00ff84;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 229, 117, 0.3);
-  }
-
-  .btn-slice:disabled {
-    background-color: #2a2d35;
-    color: #5b606e;
-    cursor: not-allowed;
+    white-space: nowrap;
   }
 
   .btn-primary {
-    background-color: #3b82f6;
-    color: white;
+    background-color: var(--color-accent);
+    color: #0b0f19;
+    border-color: var(--color-accent);
   }
 
-  .btn-primary:hover {
-    background-color: #60a5fa;
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .btn-secondary {
-    background-color: #27272a;
-    color: #e4e4e7;
-    border: 1px solid #3f3f46;
-  }
-
-  .btn-secondary:hover {
-    background-color: #3f3f46;
-    color: white;
-  }
-
-  .btn-theme-toggle {
-    background-color: var(--color-bg-input);
+    background-color: rgba(255, 255, 255, 0.04);
     color: var(--color-text-secondary);
-    border: 1px solid var(--color-border);
-    padding: 0 10px;
-    height: 32px;
+    border-color: var(--color-border);
   }
 
-  .btn-theme-toggle:hover {
+  .btn-secondary:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
     color: var(--color-text-primary);
-    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .btn-icon-only {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-icon-only:hover {
     background-color: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-primary);
   }
 
-  :global(.light) .btn-secondary {
-    background-color: #f1f5f9;
-    color: #334155;
-    border: 1px solid #cbd5e1;
-  }
-
-  :global(.light) .btn-secondary:hover {
-    background-color: #e2e8f0;
-    color: #0f172a;
-  }
-
-  :global(.light) .btn-theme-toggle:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-    border-color: rgba(0, 0, 0, 0.15);
-  }
-
-  /* Slicing spinner */
   .spinner {
-    width: 14px;
-    height: 14px;
-    border: 2px solid #0b0f19;
-    border-top: 2px solid transparent;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(11, 15, 25, 0.2);
+    border-top-color: #0b0f19;
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    animation: spin 0.6s linear infinite;
   }
 
   @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+    to { transform: rotate(360deg); }
   }
 
-  /* Bottom Row styling */
+  /* ─── Bottom Row ──────────────────────────────────────────────────── */
   .navbar-bottom {
-    height: 38px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    background-color: rgba(0, 0, 0, 0.15);
+    height: 36px;
+    padding: 0 12px;
+    gap: 12px;
+    border-top: 1px solid var(--color-border);
   }
 
-  .tab-list {
+  .tab-switcher {
     display: flex;
-    height: 100%;
+    gap: 2px;
   }
 
   .tab-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 100%;
-    padding: 0 16px;
+    gap: 5px;
+    padding: 5px 12px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     border-bottom: 2px solid transparent;
-    color: var(--color-text-secondary);
-    font-size: 13px;
-    font-weight: 500;
     cursor: pointer;
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     transition: all 0.15s ease;
+    border-radius: 5px 5px 0 0;
   }
 
-  .tab-btn:hover:not(:disabled) {
-    color: var(--color-text-primary);
-    background-color: rgba(255, 255, 255, 0.02);
+  .tab-btn:hover {
+    color: var(--color-text-secondary);
+    background-color: rgba(255, 255, 255, 0.03);
   }
 
   .tab-btn.active {
     color: var(--color-accent);
     border-bottom-color: var(--color-accent);
-    font-weight: 600;
-  }
-
-  .tab-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .file-loaded-status {
-    font-size: 12px;
-    color: var(--color-text-muted);
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .active-file-name {
-    color: var(--color-accent);
-    font-weight: 500;
-  }
-
-  .text-secondary {
-    color: var(--color-text-secondary);
   }
 </style>

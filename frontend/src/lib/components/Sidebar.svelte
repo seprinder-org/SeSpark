@@ -1,64 +1,85 @@
 <script lang="ts">
-  import { slicerSettings } from '../store';
-  import { 
-    Sliders, 
-    Shield, 
-    Gauge, 
+  /**
+   * Sidebar - Matches OrcaSlicer's Sidebar class.
+   * Contains: Object list, Preset selector (printer/filament/process),
+   * Slice parameters organized by categories (Quality/Strength/Speed/Material/Advanced).
+   * Uses internal sub-tabs matching OrcaSlicer's sidebar organization.
+   */
+  import { slicerSettings, activeSidebarSubTab, type SidebarSubTab } from '../store';
+  import {
+    Sliders,
+    Shield,
+    Gauge,
     Thermometer,
-    Info
+    Info,
+    Layers,
+    Printer,
+    Settings,
+    Box,
+    Search,
   } from 'lucide-svelte';
+  import ObjectList from './ObjectList.svelte';
+  import PresetSelector from './PresetSelector.svelte';
 
-  type SettingsSubTab = 'quality' | 'strength' | 'speed' | 'material';
-  let activeSubTab: SettingsSubTab = 'quality';
+  // ─── Sub-tab definitions ──────────────────────────────────────────────
+  interface SubTabDef {
+    id: SidebarSubTab;
+    label: string;
+    icon: any;
+  }
+
+  const subTabs: SubTabDef[] = [
+    { id: 'object_list', label: 'Objects', icon: Box },
+    { id: 'preset', label: 'Presets', icon: Printer },
+    { id: 'quality', label: 'Quality', icon: Sliders },
+    { id: 'strength', label: 'Strength', icon: Shield },
+    { id: 'speed', label: 'Speed', icon: Gauge },
+    { id: 'material', label: 'Material', icon: Thermometer },
+    { id: 'advanced', label: 'Advanced', icon: Settings },
+  ];
 </script>
 
 <aside class="sidebar">
+  <!-- Sidebar Header -->
   <div class="sidebar-header">
-    <Sliders size={16} color="#00e575" />
-    <span class="sidebar-title">Slice Parameters</span>
+    <Sliders size={15} color="#00e575" />
+    <span class="sidebar-title">Settings</span>
   </div>
 
   <!-- Settings categories tabs (Internal tabs within sidebar) -->
   <div class="sidebar-tabs">
-    <button 
-      class="subtab-btn" 
-      class:active={activeSubTab === 'quality'} 
-      on:click={() => activeSubTab = 'quality'}
-      title="Layer heights and nozzle settings"
-    >
-      Quality
-    </button>
-    <button 
-      class="subtab-btn" 
-      class:active={activeSubTab === 'strength'} 
-      on:click={() => activeSubTab = 'strength'}
-      title="Walls, shells, and infill structure"
-    >
-      Strength
-    </button>
-    <button 
-      class="subtab-btn" 
-      class:active={activeSubTab === 'speed'} 
-      on:click={() => activeSubTab = 'speed'}
-      title="Printing speeds"
-    >
-      Speed
-    </button>
-    <button 
-      class="subtab-btn" 
-      class:active={activeSubTab === 'material'} 
-      on:click={() => activeSubTab = 'material'}
-      title="Temperatures and cooling settings"
-    >
-      Material
-    </button>
+    {#each subTabs as tab}
+      <button
+        class="subtab-btn"
+        class:active={$activeSidebarSubTab === tab.id}
+        on:click={() => activeSidebarSubTab.set(tab.id)}
+        title={tab.label}
+      >
+        <svelte:component this={tab.icon} size={13} />
+        <span class="subtab-label">{tab.label}</span>
+      </button>
+    {/each}
   </div>
 
   <!-- Settings body container -->
   <div class="sidebar-content">
     
+    <!-- Object List Tab -->
+    {#if $activeSidebarSubTab === 'object_list'}
+      <div class="settings-group animate-fade-in">
+        <ObjectList />
+      </div>
+    {/if}
+
+    <!-- Preset Tab (Printer/Filament/Process) -->
+    {#if $activeSidebarSubTab === 'preset'}
+      <div class="settings-group animate-fade-in">
+        <PresetSelector />
+      </div>
+    {/if}
+
     <!-- Quality Tab -->
-    {#if activeSubTab === 'quality'}
+    {#if $activeSidebarSubTab === 'quality'}
       <div class="settings-group animate-fade-in">
         <h3 class="group-title">Layer Height</h3>
         <div class="settings-row">
@@ -120,7 +141,7 @@
     {/if}
 
     <!-- Strength Tab -->
-    {#if activeSubTab === 'strength'}
+    {#if $activeSidebarSubTab === 'strength'}
       <div class="settings-group animate-fade-in">
         <h3 class="group-title"><Shield size={13} /> Walls & Shells</h3>
         <div class="settings-row">
@@ -174,7 +195,7 @@
     {/if}
 
     <!-- Speed Tab -->
-    {#if activeSubTab === 'speed'}
+    {#if $activeSidebarSubTab === 'speed'}
       <div class="settings-group animate-fade-in">
         <h3 class="group-title"><Gauge size={13} /> Printing Speed</h3>
         <div class="settings-row">
@@ -201,6 +222,7 @@
           />
         </div>
 
+        <h3 class="group-title">Travel Speed</h3>
         <div class="settings-row">
           <label for="travel-speed">Travel speed</label>
           <div class="input-with-unit">
@@ -208,7 +230,7 @@
               id="travel-speed" 
               type="number" 
               step="10" 
-              min="30" 
+              min="50" 
               max="500" 
               bind:value={$slicerSettings.travel_speed} 
             />
@@ -218,10 +240,10 @@
       </div>
     {/if}
 
-    <!-- Material/Temp Tab -->
-    {#if activeSubTab === 'material'}
+    <!-- Material Tab -->
+    {#if $activeSidebarSubTab === 'material'}
       <div class="settings-group animate-fade-in">
-        <h3 class="group-title"><Thermometer size={13} /> Temperatures</h3>
+        <h3 class="group-title"><Thermometer size={13} /> Temperature</h3>
         <div class="settings-row">
           <label for="extruder-temp">Extruder temperature</label>
           <div class="input-with-unit">
@@ -230,7 +252,7 @@
               type="number" 
               step="5" 
               min="150" 
-              max="300" 
+              max="350" 
               bind:value={$slicerSettings.extruder_temp} 
             />
             <span class="unit">°C</span>
@@ -244,7 +266,7 @@
               type="number" 
               step="5" 
               min="0" 
-              max="120" 
+              max="150" 
               bind:value={$slicerSettings.bed_temp} 
             />
             <span class="unit">°C</span>
@@ -253,12 +275,22 @@
       </div>
     {/if}
 
+    <!-- Advanced Tab -->
+    {#if $activeSidebarSubTab === 'advanced'}
+      <div class="settings-group animate-fade-in">
+        <div class="info-banner">
+          <Settings size={14} class="info-icon" />
+          <span>Advanced settings are available in the full OrcaSlicer desktop application. The web version supports core slicing parameters.</span>
+        </div>
+      </div>
+    {/if}
   </div>
 </aside>
 
 <style>
   .sidebar {
-    width: 320px;
+    width: 280px;
+    min-width: 280px;
     background-color: var(--color-bg-sidebar);
     border-right: 1px solid var(--color-border);
     display: flex;
@@ -269,167 +301,169 @@
   }
 
   .sidebar-header {
-    height: 40px;
-    padding: 0 16px;
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--color-border);
   }
 
   .sidebar-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--color-text-primary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
 
+  /* ─── Sub-tab Navigation ──────────────────────────────────────────── */
   .sidebar-tabs {
     display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--color-border);
-    background-color: rgba(0, 0, 0, 0.1);
   }
 
   .subtab-btn {
-    flex: 1;
-    height: 36px;
-    font-size: 11px;
-    font-weight: 600;
-    text-align: center;
-    border: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
     background: transparent;
-    color: var(--color-text-secondary);
-    border-bottom: 2px solid transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
     cursor: pointer;
+    color: var(--color-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
     transition: all 0.15s ease;
   }
 
   .subtab-btn:hover {
-    color: var(--color-text-primary);
+    color: var(--color-text-secondary);
+    background-color: rgba(255, 255, 255, 0.03);
   }
 
   .subtab-btn.active {
     color: var(--color-accent);
-    border-bottom-color: var(--color-accent);
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: rgba(0, 229, 117, 0.08);
+    border-color: rgba(0, 229, 117, 0.15);
   }
 
+  .subtab-label {
+    display: none;
+  }
+
+  .subtab-btn.active .subtab-label,
+  .subtab-btn:hover .subtab-label {
+    display: inline;
+  }
+
+  /* ─── Settings Content ────────────────────────────────────────────── */
   .sidebar-content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 8px 0;
   }
 
   .settings-group {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    padding: 0 14px;
   }
 
   .group-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 8px;
-    margin-bottom: 4px;
     display: flex;
     align-items: center;
     gap: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 16px 0 8px 0;
     padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
   .settings-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    padding: 5px 0;
+    gap: 8px;
   }
 
   .settings-row label {
     font-size: 12px;
-    color: var(--color-text-secondary);
+    color: var(--color-text-primary);
+    flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  /* Custom input styling */
-  input[type="number"], select {
-    background-color: var(--color-bg-input);
+  .settings-row input[type="number"],
+  .settings-row select {
+    width: 80px;
+    padding: 4px 6px;
+    background-color: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: 5px;
     color: var(--color-text-primary);
     font-size: 12px;
-    height: 26px;
-    padding: 0 8px;
-    width: 80px;
+    text-align: right;
     outline: none;
     transition: border-color 0.15s ease;
   }
 
-  select {
-    width: 120px;
-    padding-right: 20px;
-    cursor: pointer;
-  }
-
-  input[type="number"]:focus, select:focus {
+  .settings-row input[type="number"]:focus,
+  .settings-row select:focus {
     border-color: var(--color-accent);
   }
 
   .input-with-unit {
-    position: relative;
     display: flex;
     align-items: center;
+    gap: 4px;
   }
 
-  .input-with-unit input {
-    padding-right: 28px;
-    width: 85px;
+  .input-with-unit input,
+  .input-with-unit select {
+    width: 70px;
   }
 
   .unit {
-    position: absolute;
-    right: 8px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--color-text-muted);
-    pointer-events: none;
+    width: 28px;
   }
 
-  /* Range sliders */
   .range-slider-container {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: -8px;
-    margin-bottom: 8px;
+    padding: 2px 0 8px 0;
   }
 
   .range-slider-container input[type="range"] {
-    -appearance: none;
-    -webkit-appearance: none;
     width: 100%;
-    background: #2a2d35;
-    height: 4px;
+    height: 3px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--color-border);
     border-radius: 2px;
     outline: none;
+    cursor: pointer;
   }
 
   .range-slider-container input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
     background: var(--color-accent);
+    border: 2px solid var(--color-bg-sidebar);
     cursor: pointer;
-    box-shadow: 0 0 4px rgba(0, 229, 117, 0.4);
-    transition: transform 0.1s ease;
-  }
-
-  .range-slider-container input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
   }
 
   .slider-ticks {
@@ -437,44 +471,36 @@
     justify-content: space-between;
     font-size: 9px;
     color: var(--color-text-muted);
+    margin-top: 3px;
   }
 
-  /* Info Banner */
   .info-banner {
     display: flex;
+    align-items: flex-start;
     gap: 8px;
-    background-color: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.15);
-    border-radius: 6px;
-    padding: 8px 12px;
+    padding: 8px 10px;
     margin-top: 12px;
+    background-color: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.12);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
   }
 
   .info-icon {
-    flex-shrink: 0;
     color: #3b82f6;
-    margin-top: 2px;
+    flex-shrink: 0;
+    margin-top: 1px;
   }
 
-  .info-banner span {
-    font-size: 11px;
-    line-height: 1.4;
-    color: #93c5fd;
-  }
-
-  /* Fade in animation */
+  /* ─── Animations ──────────────────────────────────────────────────── */
   .animate-fade-in {
-    animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fadeIn 0.2s ease;
   }
 
   @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 </style>

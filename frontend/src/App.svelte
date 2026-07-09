@@ -3,9 +3,12 @@
   import Navbar from "./lib/components/Navbar.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import Viewport from "./lib/components/Viewport.svelte";
-  import StatsPanel from "./lib/components/StatsPanel.svelte";
+  import PreviewPanel from "./lib/components/PreviewPanel.svelte";
   import DeviceDashboard from "./lib/components/DeviceDashboard.svelte";
   import GcodeViewer from "./lib/components/GcodeViewer.svelte";
+  import SearchDialog from "./lib/components/SearchDialog.svelte";
+  import CalibrationDialog from "./lib/components/CalibrationDialog.svelte";
+  import NotificationPanel from "./lib/components/NotificationPanel.svelte";
   import {
     activeTab,
     slicerSettings,
@@ -15,6 +18,11 @@
     sliceResult,
     currentLayerIndex,
     theme,
+    showSearchDialog,
+    showCalibrationDialog,
+    addPlaterObject,
+    selectPlaterObject,
+    addNotification,
   } from "./lib/store";
   import initWasm, { slice_stl } from "./lib/wasm-engine/slicer_engine.js";
   import confetti from "canvas-confetti";
@@ -69,9 +77,12 @@
           origin: { y: 0.6 },
           colors: ["#00e575", "#3b82f6", "#ffffff"],
         });
+
+        addNotification('success', `Slicing complete! ${parsedResult.layer_count} layers, ${(parsedResult.print_time_secs / 60).toFixed(0)} min print time.`);
       } catch (e) {
         console.error("Slicing failed:", e);
         slicingStatus.set("idle");
+        addNotification('error', 'Slicing failed: ' + e);
         alert("Slicing error: " + e);
       }
     }, 100);
@@ -100,9 +111,20 @@
         reader.onload = (evt) => {
           if (evt.target?.result) {
             const arrayBuffer = evt.target.result as ArrayBuffer;
-            stlFileBytes.set(new Uint8Array(arrayBuffer));
+            const bytes = new Uint8Array(arrayBuffer);
+            stlFileBytes.set(bytes);
             slicingStatus.set("idle");
             sliceResult.set(null);
+
+            // Add to plater object list
+            addPlaterObject({
+              name: file.name.replace(/\.[^/.]+$/, ""),
+              filename: file.name,
+              stlBytes: bytes,
+              position: { x: 128, y: 128, z: 0 },
+            });
+
+            addNotification('info', `Loaded model: ${file.name}`);
           }
         };
         reader.readAsArrayBuffer(file);
@@ -111,7 +133,23 @@
       }
     }
   }
+
+  // Keyboard shortcuts
+  function handleKeydown(e: KeyboardEvent) {
+    // Ctrl/Cmd + K: Open search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      showSearchDialog.set(true);
+    }
+    // Ctrl/Cmd + Shift + C: Open calibration
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'c') {
+      e.preventDefault();
+      showCalibrationDialog.set(true);
+    }
+  }
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 <svelte:head>
   <title>SeSpark - Sponsored by Seprinder</title>
@@ -124,28 +162,30 @@
   on:dragleave={handleDragLeave}
   on:drop={handleDrop}
 >
-  <!-- Slicer Navigation Bar -->
+  <!-- Navigation Bar (matches OrcaSlicer's top toolbar) -->
   <Navbar onSlice={handleSlice} />
 
-  <!-- Workspace view switcher -->
+  <!-- Workspace (matches OrcaSlicer's Plater area) -->
   <main class="workspace">
     {#if $activeTab === "prepare"}
-      <!-- Prepare Workspace: Settings panel on left, 3D viewport on right -->
+      <!-- Prepare Workspace: Sidebar (object list + presets + params) + 3D Viewport -->
       <div class="workspace-layout">
         <Sidebar />
-        <Viewport />
-      </div>
-    {:else}
-      <!-- Preview Workspace: 3D Viewport in middle, stats pane on right -->
-      {#if $activeTab === "preview"}
-        <div class="workspace-layout">
+        <div class="viewport-area">
           <Viewport />
-          <StatsPanel />
         </div>
-      {:else}
-        <!-- Device Workspace: Full print dashboard control -->
-        <DeviceDashboard />
-      {/if}
+      </div>
+    {:else if $activeTab === "preview"}
+      <!-- Preview Workspace: 3D Viewport + Preview Panel (GCode options) -->
+      <div class="workspace-layout">
+        <div class="viewport-area">
+          <Viewport />
+        </div>
+        <PreviewPanel />
+      </div>
+    {:else if $activeTab === "device"}
+      <!-- Device Workspace: Full print dashboard control -->
+      <DeviceDashboard />
     {/if}
   </main>
 
@@ -160,6 +200,15 @@
 
   <!-- Gcode text viewer modal overlay -->
   <GcodeViewer />
+
+  <!-- Search Dialog (Ctrl+K) -->
+  <SearchDialog />
+
+  <!-- Calibration Dialog -->
+  <CalibrationDialog />
+
+  <!-- Notification Panel (bottom-right) -->
+  <NotificationPanel />
 </div>
 
 <style>
@@ -186,6 +235,12 @@
     display: flex;
     width: 100%;
     height: 100%;
+  }
+
+  .viewport-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
   }
 
   /* Drag overlay */
