@@ -17,8 +17,8 @@
   let isHovered = false;
 
   $: thumbStyle = orientation === 'vertical'
-    ? { height: `${thumbSize}px`, top: `${position}px` }
-    : { width: `${thumbSize}px`, left: `${position}px` };
+    ? `height: ${thumbSize}px; top: ${position}px;`
+    : `width: ${thumbSize}px; left: ${position}px;`;
 
   function handleMouseDown(e: MouseEvent) {
     isDragging = true;

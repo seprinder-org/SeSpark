@@ -33,7 +33,7 @@
     filteredBrands = Object.entries(printersByBrandMap)
       .filter(([brand, printers]) =>
         brand.toLowerCase().includes(q) ||
-        printers.some(p => p.name.toLowerCase().includes(q) || p.model_id?.toLowerCase().includes(q))
+        printers.some(p => p.machine_name.toLowerCase().includes(q) || p.model_id?.toLowerCase().includes(q))
       )
       .map(([brand]) => brand)
       .sort();
@@ -109,12 +109,12 @@
                 {#each printersByBrandMap[brand] as printer}
                   <button
                     class="machine-item"
-                    class:selected={$selectedPrinterId === `${brand}::${printer.name}`}
-                    on:click={() => selectMachineProfile(`${brand}::${printer.name}`)}
+                    class:selected={$selectedPrinterId === printer.id}
+                    on:click={() => selectMachineProfile(printer.id)}
                   >
-                    <span class="machine-item-name">{printer.name}</span>
-                    {#if printer.nozzle_diameter}
-                      <span class="machine-item-nozzle">{printer.nozzle_diameter}mm</span>
+                    <span class="machine-item-name">{printer.machine_name}</span>
+                    {#if printer.nozzle_diameters && printer.nozzle_diameters.length > 0}
+                      <span class="machine-item-nozzle">{printer.nozzle_diameters[0]}mm</span>
                     {/if}
                   </button>
                 {/each}

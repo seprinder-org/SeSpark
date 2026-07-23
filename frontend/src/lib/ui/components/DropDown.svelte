@@ -76,8 +76,8 @@
     role="listbox"
   >
     {#each items as item, i}
-      {@const isSplit = !!(item.style & SPLIT_ITEM)}
-      {@const isDisabled = !!(item.style & DISABLED_ITEM)}
+      {@const isSplit = !!(item.style && (item.style & SPLIT_ITEM))}
+      {@const isDisabled = !!(item.style && (item.style & DISABLED_ITEM))}
 
       {#if item.groupLabel && (i === 0 || items[i - 1]?.groupKey !== item.groupKey)}
         <div class="dd-group-label">{item.groupLabel}</div>

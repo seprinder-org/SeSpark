@@ -8,7 +8,7 @@
 
   // Mock search results - in a full implementation this would search
   // through all available settings, presets, and actions
-  let searchResults: { category: string; items: { label: string; description: string }[] } = [];
+  let searchResults: { category: string; items: { label: string; description: string }[] }[] = [];
   let selectedIndex = 0;
 
   $: if ($searchQuery.trim()) {
@@ -56,7 +56,7 @@
       handleClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      const total = searchResults.reduce((acc, g) => acc + g.items.length, 0);
+      const total = searchResults.reduce((acc: number, g) => acc + g.items.length, 0);
       selectedIndex = Math.min(selectedIndex + 1, total - 1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -109,7 +109,7 @@
               {#each group.items as item, ii}
                 {@const globalIndex = searchResults
                   .slice(0, gi)
-                  .reduce((acc, g) => acc + g.items.length, 0) + ii}
+                  .reduce((acc: number, g) => acc + g.items.length, 0) + ii}
                 <button
                   class="search-result-item"
                   class:highlighted={globalIndex === selectedIndex}

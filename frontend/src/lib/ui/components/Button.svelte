@@ -55,9 +55,9 @@
   $: colors = styleColors[disabled ? 'disabled' : style] || styleColors.regular;
   $: resolvedIcon = disabled && inactiveIcon ? inactiveIcon : icon;
 
-  function handleClick(e: MouseEvent) {
+  function handleClick(e: MouseEvent | KeyboardEvent) {
     if (disabled) return;
-    if (onclick) onclick(e);
+    if (onclick) onclick(e as MouseEvent);
   }
 </script>
 
@@ -66,7 +66,7 @@
   {disabled}
   data-selected={selected}
   data-value={value}
-  {btnId}
+  id={btnId}
   style="
     --btn-font-size: {cfg.fontSize};
     --btn-radius: {cfg.borderRadius};

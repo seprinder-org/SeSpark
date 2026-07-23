@@ -24,6 +24,7 @@
     addPlaterObject,
     addNotification,
   } from "../store";
+  import type { Tab } from "../store";
   import {
     Printer,
     FolderOpen,
@@ -48,7 +49,7 @@
     Scissors,
   } from "lucide-svelte";
   import { getPrinterLabel } from "../profiles/profileService";
-  import type { PrinterProfile } from "../lib/profiles/types";
+  import type { PrinterProfile } from "../profiles/types";
   import PlateSelector from "./PlateSelector.svelte";
 
   // Triggers STL file loading via hidden input
@@ -232,7 +233,7 @@
   }
 
   // ─── Tab Switcher ─────────────────────────────────────────────────────
-  const tabs: { id: string; label: string; icon: any }[] = [
+  const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'prepare', label: 'Prepare', icon: Layers },
     { id: 'preview', label: 'Preview', icon: Play },
     { id: 'device', label: 'Device', icon: Cpu },
