@@ -1,117 +1,240 @@
 <script lang="ts">
+  /**
+   * DeviceDashboard - Refactored to use the new device store architecture.
+   *
+   * Previously a monolithic 1820-line component, now composes sub-components
+   * that map to the C++ DeviceCore architecture:
+   *
+   *   DeviceManager -> MachineObject -> subsystems
+   *
+   * Sub-components:
+   *   DeviceHeader        (DevInfo + connection state)
+   *   PrinterStatus       (DevBed + DevExtruderSystem temps + DevPrintTaskInfo)
+   *   TemperatureChart    (temperature history visualization)
+   *   JogControls         (DevCtrl - manual movement)
+   *   ConsolePanel        (DevCtrl - G-code terminal)
+   *   MediaPanel          (camera / live view)
+   *   FirmwarePanel       (DevFirmware + DevFirmwareUpgradeInfo)
+   *   HMSPanel            (DevHMS)
+   *   AMSPanel            (DevFilaSystem + DevAms + DevAmsTray)
+   *   FanPanel            (DevFan + AirDuctData)
+   *   StoragePanel        (DevStorage)
+   *   LampPanel           (DevLamp)
+   *   ConfigPanel         (DevConfig)
+   *   PrintOptionsPanel   (DevPrintOptions)
+   */
   import { onMount, onDestroy } from 'svelte';
-  import { 
-    Thermometer, 
-    Wind, 
-    Terminal, 
-    ArrowUp, 
-    ArrowDown, 
-    ArrowLeft, 
-    ArrowRight, 
-    Home, 
-    Activity, 
-    Send,
-    Play,
-    Pause,
-    Square
+  import {
+    Activity, Camera, RefreshCw, AlertTriangle,
+    Thermometer, Terminal, Send, Wifi, WifiOff,
+    Monitor, Home, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+    Cpu, HardDrive, Layers, Zap, X, ChevronDown, Search,
+    Fan, Droplets, Settings, Gauge, Lightbulb,
+    CheckCircle, Info, AlertCircle, XCircle, Box, Wind,
+    Move3d, Play, Pause, Square, Trash2, Download
   } from 'lucide-svelte';
 
-  // State
-  let hotendTemp = 23.4;
-  let bedTemp = 22.8;
-  
-  let targetHotend = 0;
-  let targetBed = 0;
-  
-  let printerState: 'Idle' | 'Heating' | 'Printing' | 'Paused' = 'Idle';
-  let printProgress = 0;
-  let fanSpeedPercent = 0;
+  // ─── Device Store Imports ───────────────────────────────────────────
+  import {
+    deviceManager, selectedMachine, allMachines,
+    selectedMachineBed, selectedMachineExtruder, selectedMachineFan,
+    selectedMachineFila, selectedMachineNozzles, selectedMachineStorage,
+    selectedMachineLamp, selectedMachineFirmware, selectedMachineFirmwareUpgrade,
+    selectedMachineHMS, selectedMachineConfig, selectedMachinePrintOptions,
+    selectedMachinePrintTask, selectedMachineConnection,
+    selectMachine, upsertLocalMachine, upsertCloudMachine,
+    updateBed, updateExtruderSystem, updateFan, updateFilaSystem,
+    updateNozzleSystem, updateStorage, updateLamp, updateFirmware,
+    updateFirmwareUpgrade, updateHMS, updateMachineConfig,
+    updatePrintOptions, updatePrintTask, updateConnection,
+    createMachineObject
+  } from '../device/deviceStore';
 
-  // Console terminal logs
-  let consoleLogs: string[] = [
-    "Connecting to printer over WebSocket...",
-    "Printer connected! Firmware: Klipper v0.12.0",
-    "MCU: rpi, octopus_pro",
-    "Heaters initialized.",
-    "Ready."
+  import {
+    ConnectionType, PrinterState, SdcardState, LightEffect,
+    DevFirmwareUpgradingState, DevPrintingSpeedLevel, HMSMessageLevel,
+    ModuleID, AmsType, DevExtderSwitchState, NozzleFlowType,
+    getSpeedLevelLabel, getSdcardStateLabel, getHMSLevelLabel,
+    getAmsTypeLabel, getLightEffectLabel
+  } from '../device/types';
+  import type { HMSItem, MachineObject } from '../device/types';
+
+  // ─── Sub-component Imports ──────────────────────────────────────────
+  import DeviceHeader from '../device/components/DeviceHeader.svelte';
+  import PrinterStatus from '../device/components/PrinterStatus.svelte';
+  import TemperatureChart from '../device/components/TemperatureChart.svelte';
+  import JogControls from '../device/components/JogControls.svelte';
+  import ConsolePanel from '../device/components/ConsolePanel.svelte';
+  import MediaPanel from '../device/components/MediaPanel.svelte';
+  import FirmwarePanel from '../device/components/FirmwarePanel.svelte';
+  import HMSPanel from '../device/components/HMSPanel.svelte';
+  import AMSPanel from '../device/components/AMSPanel.svelte';
+  import FanPanel from '../device/components/FanPanel.svelte';
+  import StoragePanel from '../device/components/StoragePanel.svelte';
+  import LampPanel from '../device/components/LampPanel.svelte';
+  import ConfigPanel from '../device/components/ConfigPanel.svelte';
+  import PrintOptionsPanel from '../device/components/PrintOptionsPanel.svelte';
+
+  // ─── Tab State ──────────────────────────────────────────────────────
+  type DeviceTab = 'status' | 'media' | 'update' | 'hms' | 'ams' | 'config';
+  let activeDeviceTab: DeviceTab = 'status';
+
+  const tabs: { id: DeviceTab; label: string; icon: any }[] = [
+    { id: 'status', label: 'Status', icon: Activity },
+    { id: 'media', label: 'Media', icon: Camera },
+    { id: 'ams', label: 'AMS', icon: Droplets },
+    { id: 'update', label: 'Update', icon: RefreshCw },
+    { id: 'hms', label: 'HMS', icon: AlertTriangle },
+    { id: 'config', label: 'Config', icon: Settings },
   ];
-  let cmdInput = "";
 
-  // Temperature mock history for chart drawing
-  let tempHistory: { hotend: number; bed: number }[] = Array.from({ length: 30 }, () => ({ hotend: 23, bed: 22 }));
+  // ─── Console State ──────────────────────────────────────────────────
+  let consoleLogs: string[] = [
+    'System initialized.',
+    'Ready.',
+  ];
 
-  function sendCommand() {
-    if (!cmdInput.trim()) return;
-    const cmd = cmdInput.trim().toUpperCase();
-    consoleLogs = [...consoleLogs, `> ${cmd}`];
-    
-    // Command parser mock
-    if (cmd.startsWith("G28")) {
-      consoleLogs = [...consoleLogs, "echo: Homing all axes...", "echo: Homing completed successfully."];
-    } else if (cmd.startsWith("M104") || cmd.startsWith("M109")) {
-      const match = cmd.match(/S(\d+)/);
-      if (match) {
-        targetHotend = parseInt(match[1]);
-        printerState = targetHotend > 0 ? 'Heating' : 'Idle';
-        consoleLogs = [...consoleLogs, `echo: Setting hotend target to ${targetHotend}°C...`];
-      }
-    } else if (cmd.startsWith("M140") || cmd.startsWith("M190")) {
-      const match = cmd.match(/S(\d+)/);
-      if (match) {
-        targetBed = parseInt(match[1]);
-        printerState = targetBed > 0 ? 'Heating' : 'Idle';
-        consoleLogs = [...consoleLogs, `echo: Setting bed target to ${targetBed}°C...`];
-      }
-    } else if (cmd === "CLEAR") {
-      consoleLogs = [];
-    } else {
-      consoleLogs = [...consoleLogs, `echo: Command '${cmd}' sent to MCU.`, "ok"];
-    }
+  // ─── Temperature History ────────────────────────────────────────────
+  let tempHistory: { hotend: number; bed: number }[] = Array.from(
+    { length: 30 }, () => ({ hotend: 23, bed: 22 })
+  );
 
-    cmdInput = "";
-    // Auto-scroll console
-    setTimeout(() => {
-      const el = document.getElementById("terminal-console");
-      if (el) el.scrollTop = el.scrollHeight;
-    }, 50);
-  }
+  // ─── Camera State ───────────────────────────────────────────────────
+  let cameraConnected = false;
+  let cameraUrl = '';
 
-  function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter') {
-      sendCommand();
-    }
-  }
-
-  function preheatPLA() {
-    targetHotend = 220;
-    targetBed = 60;
-    printerState = 'Heating';
-    consoleLogs = [...consoleLogs, "> PREHEAT PLA", "echo: Heating bed to 60C, hotend to 220C..."];
-  }
-
-  function cooldown() {
-    targetHotend = 0;
-    targetBed = 0;
-    printerState = 'Idle';
-    consoleLogs = [...consoleLogs, "> COOLDOWN", "echo: Shutting off all heaters..."];
-  }
-
-  function homeAll() {
-    consoleLogs = [...consoleLogs, "> G28", "echo: Homing all axes..."];
-  }
-
-  // Set up interval for temperature updates and chart
+  // ─── Simulation ─────────────────────────────────────────────────────
   let intervalId: any;
+
   onMount(() => {
+    // Initialize a demo machine if none exists
+    const dm = localStorage.getItem('deviceManager');
+    if (!dm) {
+      const demo = createMachineObject('demo-001', 'X1 Carbon');
+      demo.printer_type = 'X1 Carbon';
+      demo.printer_series = 0; // SERIES_X1
+      demo.printer_arch = 0; // CORE_XY
+      demo.info = {
+        name: 'X1 Carbon', product_name: 'Bambu Lab X1 Carbon',
+        sn: 'SN-20240001', hw_ver: 'AP01', sw_ver: 'v01.12.00',
+        sw_new_ver: 'v01.13.00', firmware_flag: 0, is_valid: true,
+        is_air_pump: false, is_laser: false, is_cutting_module: false,
+        is_extinguish_system: false,
+      };
+      demo.config = {
+        has_chamber: true, support_chamber_edit: true,
+        chamber_temp_edit_min: 0, chamber_temp_edit_max: 60,
+        chamber_temp_switch_heat: Number.MAX_SAFE_INTEGER,
+        support_first_layer_inspect: true,
+        support_save_remote_print_file_to_storage: true,
+        support_ai_monitor: true, support_print_without_sd: true,
+        support_print_all_plates: false,
+        support_calibration_lidar: true,
+        support_calibration_nozzle_offset: true,
+        support_calibration_high_temp_bed: false,
+        support_calibration_clump_pos: true,
+        support_calibration_pa_flow_auto: true,
+      };
+      demo.extruder_system.extruders = [{
+        ext_id: 0, has_nozzle: true, nozzle_id: 0, nozzle_type: 0,
+        nozzle_flow_type: NozzleFlowType.S_FLOW, nozzle_diameter: 0.4,
+        current_temp: 23.4, target_temp: 0, has_filament: true,
+        filam_backup: [], slot_pre: { ams_id: '', slot_id: '' },
+        slot_now: { ams_id: '', slot_id: '' },
+        slot_target: { ams_id: '', slot_id: '' },
+      }];
+      demo.fan = {
+        heatbreak_fan_speed: 128, cooling_fan_speed: 64,
+        big_fan1_speed: 0, big_fan2_speed: 0, fan_gear: 0,
+        support_aux_fan: true, support_chamber_fan: true,
+        support_airduct: true,
+        air_duct_data: {
+          current_mode: 0, sub_mode: 0,
+          support_cooling_filter: true, is_cooling_filter_on: false,
+          modes: {}, parts: [],
+        },
+      };
+      demo.fila_system = {
+        has_ams: true, ams_count: 1,
+        ams_list: {
+          'ams-0': {
+            ams_id: 'ams-0', ams_type: AmsType.AMS, extruder_id: 0,
+            exists: true, slot_count: 4,
+            current_temperature: 25.0, humidity_level: 2,
+            humidity_percent: 35, left_dry_time: 0,
+            support_humidity: true, support_drying: true,
+            trays: {
+              '0': {
+                id: '0', tag_uid: '', setting_id: '', filament_setting_id: '',
+                filament_type: 'PLA', sub_brands: '', color: '#ff4444',
+                cols: [], weight: '1000', diameter: '1.75', temp: '220',
+                time: '', bed_temp_type: '', bed_temp: '60',
+                nozzle_temp_max: '230', nozzle_temp_min: '190',
+                xcam_info: '', uuid: '', ctype: 0, k: 0, n: 0,
+                cali_idx: 0, is_bbl: true, is_exists: true,
+                is_slot_placeholder: false, remain: 85,
+              },
+              '1': {
+                id: '1', tag_uid: '', setting_id: '', filament_setting_id: '',
+                filament_type: 'PETG', sub_brands: '', color: '#4488ff',
+                cols: [], weight: '1000', diameter: '1.75', temp: '240',
+                time: '', bed_temp_type: '', bed_temp: '70',
+                nozzle_temp_max: '250', nozzle_temp_min: '220',
+                xcam_info: '', uuid: '', ctype: 0, k: 0, n: 0,
+                cali_idx: 0, is_bbl: true, is_exists: true,
+                is_slot_placeholder: false, remain: 60,
+              },
+              '2': {
+                id: '2', tag_uid: '', setting_id: '', filament_setting_id: '',
+                filament_type: 'ABS', sub_brands: '', color: '#44ff44',
+                cols: [], weight: '1000', diameter: '1.75', temp: '260',
+                time: '', bed_temp_type: '', bed_temp: '100',
+                nozzle_temp_max: '270', nozzle_temp_min: '240',
+                xcam_info: '', uuid: '', ctype: 0, k: 0, n: 0,
+                cali_idx: 0, is_bbl: true, is_exists: true,
+                is_slot_placeholder: false, remain: 30,
+              },
+              '3': {
+                id: '3', tag_uid: '', setting_id: '', filament_setting_id: '',
+                filament_type: 'TPU', sub_brands: '', color: '#ffaa00',
+                cols: [], weight: '500', diameter: '1.75', temp: '230',
+                time: '', bed_temp_type: '', bed_temp: '45',
+                nozzle_temp_max: '240', nozzle_temp_min: '210',
+                xcam_info: '', uuid: '', ctype: 0, k: 0, n: 0,
+                cali_idx: 0, is_bbl: true, is_exists: true,
+                is_slot_placeholder: false, remain: 90,
+              },
+            },
+          },
+        },
+        detect_on_insert: true, detect_on_powerup: true,
+        detect_remain: true, auto_refill: false,
+      };
+      demo.connection_type = ConnectionType.LAN;
+      demo.dev_ip = '192.168.1.100';
+      demo.signal = 3;
+      upsertLocalMachine(demo);
+      selectMachine('demo-001');
+    }
+
+    // Temperature simulation
     intervalId = setInterval(() => {
-      // Smoothly heat up towards target
-      if (hotendTemp < targetHotend) {
-        hotendTemp = Math.min(targetHotend, hotendTemp + (targetHotend - hotendTemp) * 0.1 + 1.5);
-      } else if (hotendTemp > targetHotend) {
-        hotendTemp = Math.max(targetHotend, hotendTemp - (hotendTemp - targetHotend) * 0.05 - 0.8);
+      const bed = $selectedMachineBed;
+      const ext = $selectedMachineExtruder;
+      const task = $selectedMachinePrintTask;
+
+      let hotend = ext.extruders[0]?.current_temp ?? 23;
+      let targetHotend = ext.extruders[0]?.target_temp ?? 0;
+      let bedTemp = bed.temp;
+      let targetBed = bed.target_temp;
+
+      // Simulate temperature changes
+      if (hotend < targetHotend) {
+        hotend = Math.min(targetHotend, hotend + (targetHotend - hotend) * 0.1 + 1.5);
+      } else if (hotend > targetHotend) {
+        hotend = Math.max(targetHotend, hotend - (hotend - targetHotend) * 0.05 - 0.8);
       } else {
-        // slight jitter
-        hotendTemp = Math.max(20, hotendTemp + (Math.random() - 0.5) * 0.2);
+        hotend = Math.max(20, hotend + (Math.random() - 0.5) * 0.2);
       }
 
       if (bedTemp < targetBed) {
@@ -119,192 +242,415 @@
       } else if (bedTemp > targetBed) {
         bedTemp = Math.max(targetBed, bedTemp - (bedTemp - targetBed) * 0.03 - 0.4);
       } else {
-        // slight jitter
         bedTemp = Math.max(20, bedTemp + (Math.random() - 0.5) * 0.1);
       }
 
-      // Check if heated
-      if (printerState === 'Heating' && Math.abs(hotendTemp - targetHotend) < 2 && Math.abs(bedTemp - targetBed) < 2 && targetHotend > 0) {
-        printerState = 'Idle';
-        consoleLogs = [...consoleLogs, "echo: Target temperatures reached. System ready."];
-      }
+      updateBed({ temp: bedTemp });
+      updateExtruderSystem({
+        extruders: [{
+          ...ext.extruders[0],
+          current_temp: hotend,
+          target_temp: targetHotend,
+        }],
+      });
 
-      // Append history
-      tempHistory = [...tempHistory.slice(1), { hotend: hotendTemp, bed: bedTemp }];
+      tempHistory = [...tempHistory.slice(1), { hotend, bed: bedTemp }];
     }, 1000);
   });
 
   onDestroy(() => {
     clearInterval(intervalId);
   });
+
+  // ─── Action Handlers ────────────────────────────────────────────────
+
+  function handleMove(axis: 'x' | 'y' | 'z', direction: '+' | '-') {
+    const cmd = `G91\nG0 ${axis.toUpperCase()}${direction}10\nG90`;
+    consoleLogs = [...consoleLogs, `> ${cmd}`, 'ok'];
+  }
+
+  function handleHome(axis: 'x' | 'y' | 'z' | 'all') {
+    const cmd = axis === 'all' ? 'G28' : `G28 ${axis.toUpperCase()}`;
+    consoleLogs = [...consoleLogs, `> ${cmd}`, 'echo: Homing completed.'];
+  }
+
+  function handleSendCommand(cmd: string) {
+    consoleLogs = [...consoleLogs, `> ${cmd}`];
+
+    if (cmd.startsWith('G28')) {
+      consoleLogs = [...consoleLogs, 'echo: Homing all axes...', 'echo: Homing completed.'];
+    } else if (cmd.startsWith('M104') || cmd.startsWith('M109')) {
+      const match = cmd.match(/S(\d+)/);
+      if (match) {
+        const target = parseInt(match[1]);
+        const ext = $selectedMachineExtruder;
+        updateExtruderSystem({
+          extruders: [{
+            ...ext.extruders[0],
+            target_temp: target,
+          }],
+        });
+        updatePrintTask({ status: target > 0 ? PrinterState.HEATING : PrinterState.IDLE });
+        consoleLogs = [...consoleLogs, `echo: Setting hotend to ${target}°C...`];
+      }
+    } else if (cmd.startsWith('M140') || cmd.startsWith('M190')) {
+      const match = cmd.match(/S(\d+)/);
+      if (match) {
+        const target = parseInt(match[1]);
+        updateBed({ target_temp: target });
+        updatePrintTask({ status: target > 0 ? PrinterState.HEATING : PrinterState.IDLE });
+        consoleLogs = [...consoleLogs, `echo: Setting bed to ${target}°C...`];
+      }
+    } else if (cmd.toUpperCase() === 'CLEAR') {
+      consoleLogs = [];
+      return;
+    } else {
+      consoleLogs = [...consoleLogs, 'ok'];
+    }
+  }
+
+  function handlePreheat() {
+    const ext = $selectedMachineExtruder;
+    updateExtruderSystem({
+      extruders: [{
+        ...ext.extruders[0],
+        target_temp: 220,
+      }],
+    });
+    updateBed({ target_temp: 60 });
+    updatePrintTask({ status: PrinterState.HEATING });
+    consoleLogs = [...consoleLogs, '> PREHEAT PLA', 'echo: Heating bed to 60C, hotend to 220C...'];
+  }
+
+  function handleCooldown() {
+    const ext = $selectedMachineExtruder;
+    updateExtruderSystem({
+      extruders: [{
+        ...ext.extruders[0],
+        target_temp: 0,
+      }],
+    });
+    updateBed({ target_temp: 0 });
+    updatePrintTask({ status: PrinterState.IDLE });
+    consoleLogs = [...consoleLogs, '> COOLDOWN', 'echo: Shutting off all heaters...'];
+  }
+
+  function handleToggleCamera() {
+    cameraConnected = !cameraConnected;
+    if (cameraConnected) {
+      cameraUrl = 'https://via.placeholder.com/640x480.png?text=Camera+Feed';
+    } else {
+      cameraUrl = '';
+    }
+  }
+
+  function handleCheckUpdate() {
+    consoleLogs = [...consoleLogs, '> CHECK UPDATE', 'Checking for firmware updates...'];
+  }
+
+  function handleStartUpdate() {
+    updateFirmwareUpgrade({ state: DevFirmwareUpgradingState.UpgradingInProgress });
+    consoleLogs = [...consoleLogs, '> START UPDATE', 'Firmware update started...'];
+    setTimeout(() => {
+      const fw = $selectedMachineFirmware;
+      updateFirmware({ sw_ver: fw.sw_new_ver || fw.sw_ver, sw_new_ver: '' });
+      updateFirmwareUpgrade({ state: DevFirmwareUpgradingState.UpgradingFinished });
+      consoleLogs = [...consoleLogs, 'Firmware update completed.'];
+    }, 5000);
+  }
+
+  function handleDismissHMS(index: number) {
+    const hms = $selectedMachineHMS;
+    const items = [...hms.items];
+    items.splice(index, 1);
+    updateHMS({ items });
+  }
+
+  function handleClearHMS() {
+    updateHMS({ items: [] });
+  }
+
+  function handleRefreshAMS() {
+    consoleLogs = [...consoleLogs, '> REFRESH AMS', 'AMS status refreshed.'];
+  }
+
+  function handleSetFanSpeed(fanType: string, speed: number) {
+    consoleLogs = [...consoleLogs, `> SET FAN ${fanType} ${speed}`, 'ok'];
+  }
+
+  function handleToggleLight() {
+    const lamp = $selectedMachineLamp;
+    updateLamp({
+      chamber_light: lamp.is_chamber_light_on ? LightEffect.OFF : LightEffect.ON,
+      is_chamber_light_on: !lamp.is_chamber_light_on,
+    });
+  }
+
+  function handleSetSpeedLevel(level: DevPrintingSpeedLevel) {
+    updatePrintOptions({ speed_level: level });
+    consoleLogs = [...consoleLogs, `> SPEED ${getSpeedLevelLabel(level)}`, 'ok'];
+  }
+
+  function handleToggleAIMonitoring() {
+    const opts = $selectedMachinePrintOptions;
+    updatePrintOptions({ ai_monitoring: !opts.ai_monitoring });
+  }
+
+  function handleToggleFirstLayerInspect() {
+    const opts = $selectedMachinePrintOptions;
+    updatePrintOptions({ first_layer_inspector: !opts.first_layer_inspector });
+  }
+
+  // Derived state for display
+  $: conn = $selectedMachineConnection;
+  $: task = $selectedMachinePrintTask;
 </script>
 
 <div class="device-dashboard animate-fade-in">
-  <!-- Left Side: Status & Jog Controls -->
-  <div class="controls-column">
-    
-    <!-- Status Card -->
-    <div class="panel status-panel-device">
-      <div class="panel-header-device">
-        <Activity size={16} color="#00e575" />
-        <span>Printer Status</span>
-        <span class="status-badge" class:active={printerState !== 'Idle'}>{printerState}</span>
-      </div>
-      <div class="status-indicators">
-        <div class="indicator-box">
-          <span class="ind-lbl">Hotend Temp</span>
-          <span class="ind-val">{hotendTemp.toFixed(1)}°C <span class="target">/ {targetHotend}°C</span></span>
-        </div>
-        <div class="indicator-box">
-          <span class="ind-lbl">Bed Temp</span>
-          <span class="ind-val">{bedTemp.toFixed(1)}°C <span class="target">/ {targetBed}°C</span></span>
-        </div>
-        <div class="indicator-box">
-          <span class="ind-lbl">Fan Speed</span>
-          <span class="ind-val">{fanSpeedPercent}%</span>
-        </div>
-        <div class="indicator-box">
-          <span class="ind-lbl">Job Progress</span>
-          <span class="ind-val">{printProgress}%</span>
-        </div>
-      </div>
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <!-- Machine Info Header Bar                                       -->
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <DeviceHeader
+    machineName={conn.name}
+    machineModel={$selectedMachine?.printer_type ?? ''}
+    machineSerial={$selectedMachine?.info?.sn ?? 'SN-00000000'}
+    firmwareVersion={$selectedMachine?.info?.sw_ver ?? 'v0.0.0'}
+  />
 
-      <!-- Quick Action Controls -->
-      <div class="quick-controls">
-        <button class="btn btn-secondary-device" on:click={preheatPLA}>Preheat PLA</button>
-        <button class="btn btn-danger-device" on:click={cooldown}>Cooldown</button>
-      </div>
-    </div>
-
-    <!-- Jog controls (X/Y/Z motions) -->
-    <div class="panel jog-panel">
-      <div class="panel-header-device">
-        <Home size={15} />
-        <span>Manual Jog Control</span>
-      </div>
-      
-      <div class="jog-layout">
-        <!-- X/Y Pad -->
-        <div class="xy-pad">
-          <span class="pad-title">X / Y Control</span>
-          <div class="arrow-grid">
-            <div></div>
-            <button class="arrow-btn" title="Move Y+ (Back)"><ArrowUp size={16} /></button>
-            <div></div>
-            
-            <button class="arrow-btn" title="Move X- (Left)"><ArrowLeft size={16} /></button>
-            <button class="arrow-btn home-btn" on:click={homeAll} title="Home X/Y/Z"><Home size={14} /></button>
-            <button class="arrow-btn" title="Move X+ (Right)"><ArrowRight size={16} /></button>
-            
-            <div></div>
-            <button class="arrow-btn" title="Move Y- (Forward)"><ArrowDown size={16} /></button>
-            <div></div>
-          </div>
-        </div>
-
-        <!-- Z Pad -->
-        <div class="z-pad">
-          <span class="pad-title">Z Control</span>
-          <div class="z-column">
-            <button class="arrow-btn z-btn" title="Move Z+ (Up)"><ArrowUp size={16} /> Z+</button>
-            <button class="arrow-btn z-btn" title="Home Z"><Home size={14} /></button>
-            <button class="arrow-btn z-btn" title="Move Z- (Down)"><ArrowDown size={16} /> Z-</button>
-          </div>
-        </div>
-
-        <!-- Extruder Pad -->
-        <div class="ext-pad">
-          <span class="pad-title">Extruder</span>
-          <div class="ext-buttons">
-            <button class="btn btn-secondary-device">Extrude 10mm</button>
-            <button class="btn btn-secondary-device">Retract 10mm</button>
-          </div>
-        </div>
-      </div>
-    </div>
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <!-- Tab Navigation                                                 -->
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <div class="tab-navigation">
+    {#each tabs as tab}
+      <button
+        class="tab-btn"
+        class:active={activeDeviceTab === tab.id}
+        on:click={() => activeDeviceTab = tab.id}
+      >
+        <svelte:component this={tab.icon} size={14} />
+        <span>{tab.label}</span>
+      </button>
+    {/each}
   </div>
 
-  <!-- Right Side: Temperature Chart & Terminal Console -->
-  <div class="feedback-column">
-    
-    <!-- Temperature Chart Grid -->
-    <div class="panel temp-chart-panel">
-      <div class="panel-header-device">
-        <Thermometer size={15} />
-        <span>Temperature Plot (°C)</span>
-      </div>
-      <div class="chart-container">
-        <!-- Basic SVG-based line chart -->
-        <svg viewBox="0 0 300 120" class="temp-svg">
-          <!-- Grid lines -->
-          <line x1="0" y1="30" x2="300" y2="30" stroke="var(--color-border)" stroke-dasharray="2,2" />
-          <line x1="0" y1="60" x2="300" y2="60" stroke="var(--color-border)" stroke-dasharray="2,2" />
-          <line x1="0" y1="90" x2="300" y2="90" stroke="var(--color-border)" stroke-dasharray="2,2" />
-          
-          <!-- Hotend Temp Line (Red) -->
-          <polyline
-            fill="none"
-            stroke="#ef4444"
-            stroke-width="2"
-            points={tempHistory.map((t, i) => `${(i / 29) * 300},${120 - (t.hotend / 300) * 120}`).join(' ')}
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <!-- Tab Content Area                                               -->
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <div class="tab-content">
+    {#if activeDeviceTab === 'status'}
+      <!-- ─── STATUS TAB ─────────────────────────────────────────── -->
+      <div class="status-tab-layout">
+        <!-- Left Column -->
+        <div class="status-left-col">
+          <PrinterStatus
+            onPreheat={handlePreheat}
+            onCooldown={handleCooldown}
           />
-          
-          <!-- Bed Temp Line (Blue) -->
-          <polyline
-            fill="none"
-            stroke="#3b82f6"
-            stroke-width="2"
-            points={tempHistory.map((t, i) => `${(i / 29) * 300},${120 - (t.bed / 120) * 120}`).join(' ')}
+          <JogControls
+            onMove={handleMove}
+            onHome={handleHome}
           />
-        </svg>
-        <div class="chart-labels">
-          <span class="chart-lbl-item"><span class="bullet hotend"></span> Hotend ({hotendTemp.toFixed(0)}°C)</span>
-          <span class="chart-lbl-item"><span class="bullet bed"></span> Bed ({bedTemp.toFixed(0)}°C)</span>
+          <FanPanel onSetFanSpeed={handleSetFanSpeed} />
+          <StoragePanel />
+          <LampPanel onToggleLight={handleToggleLight} />
+        </div>
+
+        <!-- Right Column -->
+        <div class="status-right-col">
+          <TemperatureChart history={tempHistory} />
+          <ConsolePanel bind:logs={consoleLogs} onSendCommand={handleSendCommand} />
+          <PrintOptionsPanel
+            onSetSpeedLevel={handleSetSpeedLevel}
+            onToggleAIMonitoring={handleToggleAIMonitoring}
+            onToggleFirstLayerInspect={handleToggleFirstLayerInspect}
+          />
         </div>
       </div>
-    </div>
 
-    <!-- G-code Console Terminal -->
-    <div class="panel console-panel">
-      <div class="panel-header-device">
-        <Terminal size={15} />
-        <span>G-Code Console</span>
-        <button class="clear-btn" on:click={() => consoleLogs = []}>Clear</button>
-      </div>
-      
-      <div class="terminal-logs" id="terminal-console">
-        {#each consoleLogs as log}
-          <div class="log-line" class:user-cmd={log.startsWith('>')}>{log}</div>
-        {/each}
-      </div>
-
-      <div class="console-input-row">
-        <input 
-          type="text" 
-          placeholder="Send G-code command (e.g. G28, M104 S220)..." 
-          bind:value={cmdInput} 
-          on:keydown={handleKeydown}
+    {:else if activeDeviceTab === 'media'}
+      <!-- ─── MEDIA / LIVE VIEW TAB ──────────────────────────────── -->
+      <div class="media-tab-layout">
+        <MediaPanel
+          bind:cameraConnected
+          bind:cameraUrl
+          onToggleCamera={handleToggleCamera}
         />
-        <button class="send-btn" on:click={sendCommand} title="Send Command">
-          <Send size={14} />
-        </button>
+        <div class="panel media-info-panel">
+          <div class="panel-header-device">
+            <Monitor size={15} />
+            <span>Print Status</span>
+          </div>
+          <div class="media-info-grid">
+            <div class="media-info-item">
+              <span class="media-info-lbl">File</span>
+              <span class="media-info-val">{task.filename || 'No file loaded'}</span>
+            </div>
+            <div class="media-info-item">
+              <span class="media-info-lbl">Progress</span>
+              <span class="media-info-val">{task.progress}%</span>
+            </div>
+            <div class="media-info-item">
+              <span class="media-info-lbl">Elapsed</span>
+              <span class="media-info-val">{formatTime(task.time_elapsed)}</span>
+            </div>
+            <div class="media-info-item">
+              <span class="media-info-lbl">Remaining</span>
+              <span class="media-info-val">{formatTime(task.time_remaining)}</span>
+            </div>
+            <div class="media-info-item">
+              <span class="media-info-lbl">Layer</span>
+              <span class="media-info-val">{task.current_layer} / {task.total_layers}</span>
+            </div>
+            <div class="media-info-item">
+              <span class="media-info-lbl">Status</span>
+              <span class="media-info-val" class:status-active={task.status !== PrinterState.IDLE}>{task.status}</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+    {:else if activeDeviceTab === 'ams'}
+      <!-- ─── AMS / FILAMENT TAB ─────────────────────────────────── -->
+      <div class="ams-tab-layout">
+        <AMSPanel onRefresh={handleRefreshAMS} />
+        <div class="ams-side-panels">
+          <FanPanel onSetFanSpeed={handleSetFanSpeed} />
+          <StoragePanel />
+        </div>
+      </div>
+
+    {:else if activeDeviceTab === 'update'}
+      <!-- ─── UPDATE / FIRMWARE TAB ──────────────────────────────── -->
+      <div class="update-tab-layout">
+        <FirmwarePanel
+          onCheckUpdate={handleCheckUpdate}
+          onStartUpdate={handleStartUpdate}
+        />
+        <div class="update-side-panels">
+          <ConfigPanel />
+          <PrintOptionsPanel
+            onSetSpeedLevel={handleSetSpeedLevel}
+            onToggleAIMonitoring={handleToggleAIMonitoring}
+            onToggleFirstLayerInspect={handleToggleFirstLayerInspect}
+          />
+        </div>
+      </div>
+
+    {:else if activeDeviceTab === 'hms'}
+      <!-- ─── HMS (ERRORS / WARNINGS) TAB ────────────────────────── -->
+      <div class="hms-tab-layout">
+        <HMSPanel
+          onDismissMessage={handleDismissHMS}
+          onClearAll={handleClearHMS}
+        />
+        <div class="hms-side-panels">
+          <StoragePanel />
+          <LampPanel onToggleLight={handleToggleLight} />
+        </div>
+      </div>
+
+    {:else if activeDeviceTab === 'config'}
+      <!-- ─── CONFIG TAB ─────────────────────────────────────────── -->
+      <div class="config-tab-layout">
+        <ConfigPanel />
+        <div class="config-side-panels">
+          <PrintOptionsPanel
+            onSetSpeedLevel={handleSetSpeedLevel}
+            onToggleAIMonitoring={handleToggleAIMonitoring}
+            onToggleFirstLayerInspect={handleToggleFirstLayerInspect}
+          />
+          <div class="config-mini-panels">
+            <StoragePanel />
+            <LampPanel onToggleLight={handleToggleLight} />
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
 
+<script lang="ts" context="module">
+  /** Format seconds to HH:MM:SS */
+  function formatTime(seconds: number): string {
+    if (!seconds || seconds <= 0) return '--:--:--';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+</script>
+
 <style>
+  /* ═══════════════════════════════════════════════════════════════════ */
+  /* Base Layout                                                       */
+  /* ═══════════════════════════════════════════════════════════════════ */
   .device-dashboard {
     display: flex;
-    gap: 16px;
-    padding: 16px;
+    flex-direction: column;
+    padding: 12px 16px;
     height: 100%;
     flex: 1;
-    overflow-y: auto;
+    overflow: hidden;
     background-color: var(--color-bg);
+    gap: 8px;
   }
 
-  .controls-column {
+  /* ═══════════════════════════════════════════════════════════════════ */
+  /* Tab Navigation                                                     */
+  /* ═══════════════════════════════════════════════════════════════════ */
+  .tab-navigation {
+    display: flex;
+    gap: 2px;
+    background-color: var(--color-bg-sidebar);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 3px;
+    flex-shrink: 0;
+  }
+
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+
+  .tab-btn:hover {
+    color: var(--color-text-primary);
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .tab-btn.active {
+    background-color: rgba(0, 229, 117, 0.1);
+    color: var(--color-accent);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════ */
+  /* Tab Content                                                        */
+  /* ═══════════════════════════════════════════════════════════════════ */
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  /* ─── STATUS TAB ─────────────────────────────────────────────────── */
+  .status-tab-layout {
+    display: flex;
+    gap: 16px;
+    height: 100%;
+  }
+
+  .status-left-col {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -312,14 +658,125 @@
     max-width: 480px;
   }
 
-  .feedback-column {
+  .status-right-col {
     flex: 1.2;
     display: flex;
     flex-direction: column;
     gap: 16px;
   }
 
-  /* Panels */
+  /* ─── MEDIA TAB ──────────────────────────────────────────────────── */
+  .media-tab-layout {
+    display: flex;
+    gap: 16px;
+    height: 100%;
+  }
+
+  .media-info-panel {
+    flex: 1;
+    max-width: 320px;
+  }
+
+  .media-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .media-info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background-color: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+  }
+
+  .media-info-lbl {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  .media-info-val {
+    font-size: 12px;
+    color: var(--color-text-primary);
+    font-weight: 600;
+  }
+
+  .media-info-val.status-active {
+    color: var(--color-accent);
+  }
+
+  /* ─── AMS TAB ────────────────────────────────────────────────────── */
+  .ams-tab-layout {
+    display: flex;
+    gap: 16px;
+  }
+
+  .ams-side-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 360px;
+    flex: 1;
+  }
+
+  /* ─── UPDATE TAB ─────────────────────────────────────────────────── */
+  .update-tab-layout {
+    display: flex;
+    gap: 16px;
+  }
+
+  .update-side-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 400px;
+    flex: 1;
+  }
+
+  /* ─── HMS TAB ────────────────────────────────────────────────────── */
+  .hms-tab-layout {
+    display: flex;
+    gap: 16px;
+  }
+
+  .hms-side-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 320px;
+    flex: 1;
+  }
+
+  /* ─── CONFIG TAB ─────────────────────────────────────────────────── */
+  .config-tab-layout {
+    display: flex;
+    gap: 16px;
+  }
+
+  .config-side-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 400px;
+    flex: 1;
+  }
+
+  .config-mini-panels {
+    display: flex;
+    gap: 16px;
+  }
+
+  .config-mini-panels > :global(*) {
+    flex: 1;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════ */
+  /* Shared Panel Styles                                                */
+  /* ═══════════════════════════════════════════════════════════════════ */
   .panel {
     background-color: var(--color-bg-sidebar);
     border: 1px solid var(--color-border);
@@ -341,304 +798,6 @@
     padding-bottom: 8px;
   }
 
-  .status-badge {
-    margin-left: auto;
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-text-secondary);
-  }
-
-  .status-badge.active {
-    background-color: rgba(0, 229, 117, 0.1);
-    border-color: rgba(0, 229, 117, 0.3);
-    color: var(--color-accent);
-  }
-
-  /* Status Indicators Grid */
-  .status-indicators {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-
-  .indicator-box {
-    background-color: rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .ind-lbl {
-    font-size: 10px;
-    color: var(--color-text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .ind-val {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--color-text-primary);
-  }
-
-  .ind-val .target {
-    font-size: 11px;
-    color: var(--color-text-muted);
-    font-weight: 400;
-  }
-
-  .quick-controls {
-    display: flex;
-    gap: 12px;
-  }
-
-  .btn-secondary-device {
-    background-color: #27272a;
-    color: #e4e4e7;
-    border: 1px solid #3f3f46;
-    padding: 6px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: 6px;
-    cursor: pointer;
-    flex: 1;
-    transition: all 0.15s ease;
-  }
-
-  .btn-secondary-device:hover {
-    background-color: #3f3f46;
-    color: white;
-  }
-
-  .btn-danger-device {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    padding: 6px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: 6px;
-    cursor: pointer;
-    flex: 1;
-    transition: all 0.15s ease;
-  }
-
-  .btn-danger-device:hover {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  /* Jog Panel layout */
-  .jog-layout {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
-    gap: 16px;
-  }
-
-  .pad-title {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    display: block;
-    margin-bottom: 8px;
-  }
-
-  .arrow-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 36px);
-    grid-template-rows: repeat(3, 36px);
-    gap: 6px;
-  }
-
-  .arrow-btn {
-    background-color: #27272a;
-    border: 1px solid #3f3f46;
-    border-radius: 6px;
-    color: var(--color-text-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .arrow-btn:hover {
-    background-color: #3f3f46;
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .home-btn {
-    background-color: rgba(0, 229, 117, 0.1);
-    border-color: rgba(0, 229, 117, 0.3);
-    color: var(--color-accent);
-  }
-
-  .home-btn:hover {
-    background-color: var(--color-accent);
-    color: #0b0f19;
-  }
-
-  .z-column {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .z-btn {
-    height: 36px;
-    font-size: 11px;
-    font-weight: 600;
-    gap: 4px;
-  }
-
-  .ext-pad {
-    grid-column: span 2;
-    margin-top: 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.03);
-    padding-top: 12px;
-  }
-
-  .ext-buttons {
-    display: flex;
-    gap: 12px;
-  }
-
-  /* Temperature Chart */
-  .temp-chart-panel {
-    height: 190px;
-  }
-
-  .chart-container {
-    position: relative;
-    flex: 1;
-    background-color: var(--color-bg-input);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    overflow: hidden;
-    padding: 8px;
-  }
-
-  .temp-svg {
-    width: 100%;
-    height: 110px;
-  }
-
-  .chart-labels {
-    position: absolute;
-    bottom: 6px;
-    left: 8px;
-    display: flex;
-    gap: 16px;
-  }
-
-  .chart-lbl-item {
-    font-size: 10px;
-    color: var(--color-text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .chart-lbl-item .bullet {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-  }
-
-  .chart-lbl-item .bullet.hotend { background-color: #ef4444; }
-  .chart-lbl-item .bullet.bed { background-color: #3b82f6; }
-
-  /* Console Terminal */
-  .console-panel {
-    flex: 1;
-    min-height: 250px;
-  }
-
-  .clear-btn {
-    margin-left: auto;
-    background: transparent;
-    border: none;
-    color: var(--color-text-muted);
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  .clear-btn:hover {
-    color: var(--color-text-secondary);
-  }
-
-  .terminal-logs {
-    flex: 1;
-    background-color: #0b0f19;
-    border: 1px solid var(--color-border);
-    border-radius: 6px 6px 0 0;
-    padding: 10px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 11px;
-    color: #a3b8cc;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    height: 160px;
-  }
-
-  .log-line {
-    word-break: break-all;
-    line-height: 1.4;
-  }
-
-  .log-line.user-cmd {
-    color: var(--color-accent);
-    font-weight: 600;
-  }
-
-  .console-input-row {
-    display: flex;
-    border: 1px solid var(--color-border);
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-    overflow: hidden;
-  }
-
-  .console-input-row input {
-    flex: 1;
-    background-color: #121214;
-    border: none;
-    padding: 0 12px;
-    height: 32px;
-    color: var(--color-text-primary);
-    font-family: inherit;
-    font-size: 12px;
-    outline: none;
-  }
-
-  .send-btn {
-    width: 40px;
-    background-color: #27272a;
-    border: none;
-    color: var(--color-text-secondary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .send-btn:hover {
-    background-color: #3f3f46;
-    color: var(--color-accent);
-  }
-
   .animate-fade-in {
     animation: fadeIn 0.2s ease-out forwards;
   }
@@ -649,49 +808,11 @@
   }
 
   /* Light Theme overrides */
-  :global(.light) .terminal-logs {
+  :global(.light) .tab-btn.active {
+    background-color: rgba(0, 229, 117, 0.1);
+  }
+
+  :global(.light) .media-info-item {
     background-color: #f8fafc;
-    color: #334155;
-  }
-
-  :global(.light) .console-input-row input {
-    background-color: #ffffff;
-    color: #0f172a;
-  }
-
-  :global(.light) .send-btn {
-    background-color: #f1f5f9;
-    color: #334155;
-  }
-
-  :global(.light) .send-btn:hover {
-    background-color: #e2e8f0;
-    color: var(--color-accent);
-  }
-
-  :global(.light) .arrow-btn {
-    background-color: #f1f5f9;
-    border-color: #cbd5e1;
-    color: #0f172a;
-  }
-
-  :global(.light) .arrow-btn:hover {
-    background-color: #e2e8f0;
-    border-color: #94a3b8;
-  }
-
-  :global(.light) .indicator-box {
-    background-color: #f1f5f9;
-  }
-
-  :global(.light) .btn-secondary-device {
-    background-color: #f1f5f9;
-    color: #334155;
-    border: 1px solid #cbd5e1;
-  }
-
-  :global(.light) .btn-secondary-device:hover {
-    background-color: #e2e8f0;
-    color: #0f172a;
   }
 </style>
