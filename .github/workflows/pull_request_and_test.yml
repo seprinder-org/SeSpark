@@ -44,6 +44,7 @@ jobs:
       run: |
         cd frontend
         npm ci
+        npm run profiles:generate
 
     - name: Run Frontend Check
       run: |
